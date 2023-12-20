@@ -153,7 +153,7 @@ const getTruck = (request, response) => {
       }
 
       const trucksWithImageURLs = await Promise.all(
-        results.map(async (truck) => {
+        results.map(async (truck) => { 
           // Function to get the S3 URL for an image
           const getImageUrl = async (imageName) => {
             const params = {
