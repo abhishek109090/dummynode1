@@ -3,7 +3,13 @@ const express = require('express')
 const session = require('express-session');
 const MySQLStore = require('express-mysql-session')(session);
 const app = express();
+const AWS = require('aws-sdk');
+const fs = require('fs');
+const {v4: uuidv4} = require('uuid');
 
+const {S3Client, PutObjectCommand, BucketType} = require('@aws-sdk/client-s3')
+const dotenv = require('dotenv');
+dotenv.config();
 // Initialize express-session to manage sessions
 app.use(session({ secret: 'your-secret-key', resave: false, saveUninitialized: false }));
 
@@ -15,8 +21,27 @@ app.use(session({ secret: 'your-secret-key', resave: false, saveUninitialized: f
 //     user: 'postgres',
 //     password: 'Abhi@2001',
 // })
-const mysql = require('mysql');
+AWS.config.update({
+  accessKeyId:  process.env.ACCESS_KEY,
+  secretAccessKey:  process.env.SECRET_ACCESS_KEY,
+  region:  process.env.BUCKET_REGION,
+});
+console.log(AWS.config.update)
+const s4 = new AWS.S3();
 
+const mysql = require('mysql');
+const bucketname = process.env.BUCKET_NAME;
+const bucketRegion =  process.env.BUCKET_REGION;
+const accessKey =  process.env.ACCESS_KEY;
+const secretAccessKey =  process.env.SECRET_ACCESS_KEY;
+console.log(bucketname,bucketRegion,accessKey)
+const s3 = new S3Client({
+  region: bucketRegion,
+  credentials: ({
+    accessKeyId: accessKey,  
+    secretAccessKey: secretAccessKey,
+  }),
+});
 const connection = mysql.createConnection({
   host: '68.178.149.116', 
   port:'3306',
@@ -211,55 +236,71 @@ const getAgentType = (request, response) => {
   });
 };
 const getTrucks = (request, response) => {
-  const { crn } = request.query;
+  const {crn } = request.query;
+  console.log(crn);
 
-  connection .query(
-    'SELECT t1.truckNumber, t1.truckMaxWeight, t1.truckWheels, t1.rightside, t2.* FROM truck AS t1 JOIN post1 AS t2 ON t1.truckNumber = t2.truckNumber WHERE t2.crn = ?',
+  connection.query(
+    'SELECT t1.*, t2.* FROM truck AS t1 JOIN post1 AS t2 ON t1.truckNumber = t2.truckNumber WHERE t2.crn = ?',
     [crn],
-    (error, results) => {
-      if (error) { 
+    async (error, results) => {
+      if (error) {
         throw error;
       }
-      console.log('Retrieved truck data:', results);
 
-      // Iterate through the results and construct image URLs
-      const trucksWithImageURLs = results.map((truck) => {
-        const uploadRegistrationUrl = `http://localhost:9000/images/${truck.uploadRegistration}`;
-        const truckFrontSideWithNumberPlateUrl = `http://localhost:9000/images/${truck.truckFrontSideWithNumberPlate}`;
-        const truckBackSideWithNumberPlateUrl = `http://localhost:9000/images/${truck.truckBackSideWithNumberPlate}`;
-        const truckCabinUrl = `http://localhost:9000/images/${truck.truckCabin}`;
-        const truckOdometerUrl = `http://localhost:9000/images/${truck.truckOdometer}`;
-        const truckVideoUrl = `http://localhost:9000/images/${truck.truckVideo}`;
-        const truckPermitUrl = `http://localhost:9000/images/${truck.truckPermit}`;
-        const truckFitUrl = `http://localhost:9000/images/${truck.truckFit}`;
-        const truckPollutionCertificateUrl = `http://localhost:9000/images/${truck.truckPollutionCertificate}`;
-        const truckInsuranceCertificateUrl = `http://localhost:9000/images/${truck.truckInsuranceCertificate}`;
-        const truckOwnerPassportSizePhotoUrl = `http://localhost:9000/images/${truck.truckOwnerPassportSizePhoto}`;
-        const rightsideUrl = `http://localhost:9000/images/${truck.rightside}`;  
-        const leftsideUrl = `http://localhost:9000/images/${truck.leftside}`;  
+      const trucksWithImageURLs = await Promise.all(
+        results.map(async (truck) => {
+          // Function to get the S3 URL for an image
+          const getImageUrl = async (imageName) => {       
+            const params = {  
+              Bucket: bucketname,  
+              Key: imageName,
+            };
 
-        return {
-          ...truck,
-          uploadRegistrationUrl,
-          truckFrontSideWithNumberPlateUrl,
-          truckBackSideWithNumberPlateUrl,
-          truckCabinUrl,
-          truckOdometerUrl,
-          truckVideoUrl,
-          truckPermitUrl,
-          truckFitUrl,
-          truckPollutionCertificateUrl,
-          truckInsuranceCertificateUrl,
-          truckOwnerPassportSizePhotoUrl,
-          rightsideUrl,
-          leftsideUrl
-        };
-      });
+            const signedUrl = await s4.getSignedUrlPromise('getObject', params);
+            return signedUrl;
+          };
+
+          const uploadRegistrationUrl = await getImageUrl(truck.uploadRegistration);
+          const truckFrontSideWithNumberPlateUrl = await getImageUrl(truck.truckFrontSideWithNumberPlate);
+          const truckBackSideWithNumberPlateUrl = await getImageUrl(truck.truckBackSideWithNumberPlate);
+          const truckCabinUrl = await getImageUrl(truck.truckCabin);
+          const truckOdometerUrl = await getImageUrl(truck.truckOdometer);
+          const truckVideoUrl = await getImageUrl(truck.truckVideo);
+          const truckPermitUrl = await getImageUrl(truck.truckPermit);
+          const truckFitUrl = await getImageUrl(truck.truckFit);
+          const truckPollutionCertificateUrl = await getImageUrl(truck.truckPollutionCertificate);
+          const truckInsuranceCertificateUrl = await getImageUrl(truck.truckInsuranceCertificate);
+          const truckOwnerPassportSizePhotoUrl = await getImageUrl(truck.truckOwnerPassportSizePhoto);
+          const rightsideUrl = await getImageUrl(truck.rightside);
+          const leftsideUrl = await getImageUrl(truck.leftside);
+
+          return {
+            ...truck,
+            uploadRegistrationUrl,
+            truckFrontSideWithNumberPlateUrl,
+            truckBackSideWithNumberPlateUrl,
+            truckCabinUrl,
+            truckOdometerUrl,
+            truckVideoUrl,
+            truckPermitUrl,  
+            truckFitUrl,
+            truckPollutionCertificateUrl,
+            truckInsuranceCertificateUrl,
+            truckOwnerPassportSizePhotoUrl,
+            rightsideUrl,
+            leftsideUrl,
+          };
+        })
+      );
 
       response.status(200).json(trucksWithImageURLs);
     }
   );
 };
+
+
+// Function to get signed URLs for images from S3 bucket
+
 const getOwner=(request,response)=>{
   connection.query('select * from agent ',(error,results)=>{
         if(error){
@@ -274,13 +315,98 @@ const getOwnerById=(request,respose)=>{
         if(error){
             throw error
         }
-        
+           
         respose.status(200).json(results)
     })
 }
-const createOwner = (request, response) => {
-  const {  
-    agentType,
+const createOwner = async (request, response) => {
+  try {
+    
+    const {
+      agentType,
+    name,
+    email,
+    password,
+    phonenumber,
+    aadharNumber,    
+  
+    doorNo,
+    street,
+    landmark,
+    village,
+    pincode,
+    pancardNumber,
+   
+    mandal,
+    state,
+    district,
+    crn,
+    } = request.body;
+
+    const { uploadAadhar, uploadPan } = request.files;
+    const filenames = {
+      uploadAadhar: `aadhar_${uuidv4()}.jpg`, // Use UUID for unique filenames
+      uploadPan: `pan_${uuidv4()}.jpg`,
+    };
+
+    // Upload files to AWS S3
+    await Promise.all([
+      uploadFileToS3(uploadAadhar[0], filenames.uploadAadhar),
+      uploadFileToS3(uploadPan[0], filenames.uploadPan),
+    ]);
+    console.log(request.files)
+console.log('requst file buffer',request.files.buffer)
+    // Insert data into the MySQL database   
+    const results = await insertOwnerDataIntoDB({
+      agentType,
+      name,
+      email,
+      password,
+      phonenumber,
+      aadharNumber,  
+    
+      doorNo,
+      street,
+      landmark,
+      village,
+      pincode,
+      pancardNumber,
+     
+      mandal,
+      state,
+      district,
+      crn,
+      filenames,
+    });
+
+    response.status(200).send(`Truck added with ID: ${results.insertId}`);
+  } catch (error) {
+    console.error(error);
+    response.status(500).send("Internal Server Error");
+  }
+};
+
+// Function to upload a file to AWS S3
+const uploadFileToS3 = async (file, filename) => {
+  const params = {
+    Bucket: bucketname,
+    Key: filename,
+    Body: fs.createReadStream(file.path),  
+    ContentType: file.mimetype,   
+  };    
+console.log(params)    
+  try {     
+    const command = new PutObjectCommand(params);  
+    await s3.send(command);
+  } catch (error) {   
+    console.error('Error uploading file to S3:', error);
+    throw error;    
+  }  
+};    
+const agentId = generateRandomAgentId();  
+// Function to insert owner data into the MySQL database
+const insertOwnerDataIntoDB = async ({ 
+  agentType,
     name,
     email,
     password,
@@ -298,32 +424,21 @@ const createOwner = (request, response) => {
     state,
     district,
     crn,
-  } = request.body;
-  const { 
-        uploadAadhar,
-        uploadPan,
-       
-      } = request.files;
-      const filenames = {
-        uploadAadhar: uploadAadhar[0].filename,
-        uploadPan: uploadPan[0].filename,
-       
-      };
-
-  // Generate a random 6-digit agent ID 
-  const agentId = generateRandomAgentId();
-
-  connection.query('insert into agent (agentType, name, email, password, phonenumber, aadharNumber, uploadAadhar, pancardNumber, uploadPan, doorNo, street, landmark, village, pincode, mandal, district, state, crn, agentId) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+  filenames,
+}) => {
+  return new Promise((resolve, reject) => {
+    connection.query('insert into agent (agentType, name, email, password, phonenumber, aadharNumber, uploadAadhar, pancardNumber, uploadPan, doorNo, street, landmark, village, pincode, mandal, district, state, crn, agentId) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     [agentType, name, email, password, phonenumber, aadharNumber, filenames.uploadAadhar, pancardNumber, filenames.uploadPan, doorNo, street, landmark, village, pincode, mandal, district, state, crn, agentId],
-    (error, results) => {
-      if (error) {
-        throw error;
+      (error, results) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(results);
+        }
       }
-      response.status(200).send(`Agent product added with agent ID: ${agentId}`);
-    }
-  );
-}
-
+    );
+  });
+};
 // Function to generate a random 6-digit agent ID
 function generateRandomAgentId() {
   const min = 100000; // Minimum 6-digit number
@@ -364,8 +479,8 @@ const deleteOwner=(request,response)=>{
     const id=parseInt(request.params.id)
     connection.query('DELETE FROM agent  WHERE id=?',[id],(error,results)=>
     {
-        if(error){  
-            throw error
+        if(error){    
+            throw error  
         }
         response.status(200).send(` deleted  Agent with id:${id}`)
     })
@@ -376,10 +491,10 @@ const deleteBooking = (request, response) => {
     // Retrieve the booking details to get the truck data
     connection.query('SELECT * FROM booking WHERE id = ?', [id], (error, bookingSelectResult) => {
       if (error) {
-        throw error;
+        throw error;  
       }
   
-      const bookingData = bookingSelectResult.rows[0];
+      const bookingData = bookingSelectResult[0];
   
       if (bookingData) {
         // Delete the canceled booking
@@ -390,7 +505,7 @@ const deleteBooking = (request, response) => {
   
           // Now, move data from the 'post' table to the 'post1' table based on some criteria (e.g., truckNumber)
           connection.query(
-            'INSERT INTO post1 SELECT * FROM post WHERE "truckNumber" = $1',
+            'INSERT INTO post1 SELECT * FROM post WHERE truckNumber = ?',
             [bookingData.truckNumber],
             (error, post1InsertResult) => {
               if (error) {

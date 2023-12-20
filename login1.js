@@ -1,10 +1,15 @@
 const express = require('express')
 const crypto = require('crypto');
-const uuid = require('uuid');
+const {v4: uuidv4} = require('uuid');
 const app = express()
+const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
 const secretKey = 'your-secret-key';
+const {S3Client, PutObjectCommand, BucketType} = require('@aws-sdk/client-s3')
+const dotenv = require('dotenv');
+dotenv.config();
+
 // const Pool = require('pg').Pool
 // const pool = new Pool({
 //     host: 'localhost',
@@ -46,6 +51,18 @@ connection.on('error', (err) => {
   } else { 
     console.error('Unexpected database error:', err.message);
   }
+});
+const bucketname = process.env.BUCKET_NAME;
+const bucketRegion =  process.env.BUCKET_REGION;
+const accessKey =  process.env.ACCESS_KEY;
+const secretAccessKey =  process.env.SECRET_ACCESS_KEY;
+console.log(bucketname,bucketRegion,accessKey)
+const s3 = new S3Client({
+  region: bucketRegion,
+  credentials: ({
+    accessKeyId: accessKey,  
+    secretAccessKey: secretAccessKey,
+  }),
 });
 app.use(bodyParser.json());
 const JWT_SECRET = 'aassddffghhddffddffddffggttggy';
@@ -121,46 +138,55 @@ function generateCRN() {
       }
     );
     };
-    const createOwner1 = (request, response) => {
-      const crn = generateCRN();
-      const {
-        ownername,
-        owneremail,
-        userType,
-        phonenumber,
-        password,
-        agentNumber,
-        bankName,
-        holderName,
-        accNumber,
-        bankIfsc,
-        aadharNumber,
-        pancardNumber,
-        doorNo,
-        street,
-        landmark,
-        village,
-        pincode,
-        mandal,
-        district,
-        state,
-        feildcrn,
-        ownerId,
-      } = request.body;
-    
-      const { uploadAadhar, uploadPan } = request.files;
-      const filenames = {
-        uploadAadhar: uploadAadhar[0].filename,
-        uploadPan: uploadPan[0].filename,
-      };
+
+
+    const updateonwer1 = (request, response) => {
+      const { crn, loggedstatus, password } = request.body;
+      console.log(crn, loggedstatus, password);
     
       connection.query(
-        `INSERT INTO owner1 
-        (ownername, owneremail, userType, phonenumber, password, agentNumber, bankName, holderName, 
-        accNumber, bankIfsc, aadharNumber, pancardNumber, uploadAadhar, uploadPan, street, doorNo, 
-        landmark, village, pincode, mandal, district, state, feildcrn, ownerId, crn) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
+        'UPDATE owner1 SET loggedstatus = ?, password = ? WHERE crn = ?',
+        [loggedstatus, password, crn],
+        (error, results) => {
+          if (error) {
+            throw error;
+          }
+          console.log(results);
+    
+          if (results.affectedRows > 0) {
+            response.status(200).send(`Password updated successfully`);
+          } else {
+            response.status(500).send(`Failed to update password`);
+          }
+        }
+      );
+    };
+    const updateAgent = (request, response) => {
+      const { crn, loggedstatus, password } = request.body;
+      console.log(crn, loggedstatus, password);
+    
+      connection.query(
+        'UPDATE agent SET loggedstatus = ?, password = ? WHERE crn = ?',
+        [loggedstatus, password, crn],
+        (error, results) => {
+          if (error) {
+            throw error;
+          }
+          console.log(results);
+    
+          if (results.affectedRows > 0) {
+            response.status(200).send(`Password updated successfully`);
+          } else {
+            response.status(500).send(`Failed to update password`);
+          }
+        }
+      );
+    };
+    
+    const createOwner1 = async (request, response) => {
+      try {
+        const crn = generateCRN();
+        const {
           ownername,
           owneremail,
           userType,
@@ -172,12 +198,49 @@ function generateCRN() {
           accNumber,
           bankIfsc,
           aadharNumber,
-          pancardNumber, 
-          filenames.uploadAadhar,
-          filenames.uploadPan,
+          pancardNumber,
+          doorNo,
+          street,
+          landmark,
+          village,
+          pincode,
+          mandal,
+          district,
+          state,
+          feildcrn,
+          ownerId,
+        } = request.body;
+    
+        const { uploadAadhar, uploadPan } = request.files;
+        const filenames = {
+          uploadAadhar: `aadhar_${uuidv4()}.jpg`, // Use UUID for unique filenames
+          uploadPan: `pan_${uuidv4()}.jpg`,
+        };
+    
+        // Upload files to AWS S3
+        await Promise.all([
+          uploadFileToS3(uploadAadhar[0], filenames.uploadAadhar),
+          uploadFileToS3(uploadPan[0], filenames.uploadPan),
+        ]);
+        console.log(request.files)
+    console.log('requst file buffer',request.files.buffer)
+        // Insert data into the MySQL database
+        const results = await insertOwnerDataIntoDB({
+          ownername,
+          owneremail,
+          userType,
+          phonenumber,
+          password,
+          agentNumber,
+          bankName,
+          holderName,
+          accNumber,
+          bankIfsc,
+          aadharNumber,
+          pancardNumber,
           street,
           doorNo,
-          landmark, 
+          landmark,
           village,
           pincode,
           mandal,
@@ -186,14 +249,104 @@ function generateCRN() {
           feildcrn,
           ownerId,
           crn,
-        ],
-        (error, results) => {
-          if (error) {
-            throw error;
+          filenames,
+        });
+    
+        response.status(200).send(`Truck added with ID: ${results.insertId}`);
+      } catch (error) {
+        console.error(error);
+        response.status(500).send("Internal Server Error");
+      }
+    };
+    
+    // Function to upload a file to AWS S3
+    const uploadFileToS3 = async (file, filename) => {
+      const params = {
+        Bucket: bucketname,
+        Key: filename,
+        Body: fs.createReadStream(file.path),
+        ContentType: file.mimetype,
+      };  
+    console.log(params)
+      try {
+        const command = new PutObjectCommand(params);
+        await s3.send(command);
+      } catch (error) {
+        console.error('Error uploading file to S3:', error);
+        throw error;  
+      }
+    };
+    
+    // Function to insert owner data into the MySQL database
+    const insertOwnerDataIntoDB = async ({
+      ownername,
+      owneremail,   
+      userType,
+      phonenumber,  
+      password,
+      agentNumber,
+      bankName,
+      holderName,
+      accNumber,
+      bankIfsc,
+      aadharNumber,
+      pancardNumber,
+      street,
+      doorNo,
+      landmark,
+      village,
+      pincode,
+      mandal,
+      district,
+      state,
+      feildcrn,
+      ownerId,
+      crn,
+      filenames,
+    }) => {
+      return new Promise((resolve, reject) => {
+        connection.query(
+          `INSERT INTO owner1 
+          (ownername, owneremail, userType, phonenumber, password, agentNumber, bankName, holderName, 
+          accNumber, bankIfsc, aadharNumber, pancardNumber, uploadAadhar, uploadPan, street, doorNo, 
+          landmark, village, pincode, mandal, district, state, feildcrn, ownerId, crn) 
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            ownername,
+            owneremail,
+            userType,
+            phonenumber,
+            password,
+            agentNumber,
+            bankName,
+            holderName,
+            accNumber,
+            bankIfsc,
+            aadharNumber,
+            pancardNumber,
+            filenames.uploadAadhar,
+            filenames.uploadPan,
+            street,
+            doorNo,
+            landmark,
+            village,
+            pincode,
+            mandal,
+            district,
+            state,
+            feildcrn,
+            ownerId,
+            crn,
+          ],
+          (error, results) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(results);
+            }
           }
-          response.status(200).send(`Truck added with ID: ${results.insertId}`);
-        }
-      );
+        );
+      });
     };
     
   const authenticateAgent = (request, response) => {
@@ -240,7 +393,7 @@ const getAgentUsers = (request, response) => {
   if (!feildcrn) {
     response.status(400).json({ error: 'feildcrn is required' });
     return;
-  }
+  }  
 
   connection.query('SELECT * FROM `owner1` WHERE feildcrn = ? ', [feildcrn], (error, results) => {
     if (error) {
@@ -257,7 +410,7 @@ const getAgentUsers = (request, response) => {
     console.log('Fetched owner data:', results);
   });
 };
-
+  
 // Additional code for setting up the server, database connection, etc.
 
 // Additional code for setting up the server, database connection, etc.
@@ -337,5 +490,7 @@ module.exports = {
     authenticateAgent,
     createAgent,
     createOwner1,
-    getAgentUsers
+    getAgentUsers,
+    updateonwer1,
+    updateAgent
 }

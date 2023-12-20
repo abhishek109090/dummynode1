@@ -4,24 +4,25 @@
   "main": "Main1.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "s3":"nodemon Main1.js",
+    "s3": "nodemon Main1.js",
     "s": "npx pm2 start Main1.js",
     "s1": "pm2 stop Main1.js",
     "build": "npm install"
   },
-  
   "keywords": [
     "hii"
   ],
   "author": "k.abhishek",
   "license": "ISC",
-  
   "homepage": "https://github.com/abhishek2276/aws#readme",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.474.0",
+    "aws-sdk": "^2.1520.0",
     "bcrypt": "^5.1.1",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
+    "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-mysql-session": "^3.0.0",
     "express-session": "^1.17.3",

@@ -116,16 +116,19 @@ const getLocation=(request,response)=>{
 
     })
 }
-const getPost=(request,response)=>{
-    const { crn }= request.query
-    console.log(crn)
-    connection.query('select * from post where crn=? ',[crn],(error,results)=>{
-        if(error){
-            throw error
-        } 
-        response.status(200).json(results)
-    })
-} 
+const getPost = (request, response) => {
+  const { crn } = request.query;
+  console.log(crn);
+  connection.query('SELECT * FROM post WHERE crn=?', [crn], (error, results) => {
+      if (error) {
+          console.error('Error fetching data:', error);
+          response.status(500).send('Internal Server Error');
+          return;
+      }
+      response.status(200).json(results);
+  });
+};
+
 const getPostStatus = (request, response) => {
     const { crn, truckNumber } = request.query;
     console.log(crn, truckNumber);

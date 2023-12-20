@@ -3,7 +3,12 @@ const session = require('express-session');
 const express = require('express')
 
 const app = express();
-
+const fs = require('fs');
+const {v4: uuidv4} = require('uuid');
+const AWS = require('aws-sdk');
+const {S3Client, PutObjectCommand, BucketType} = require('@aws-sdk/client-s3')
+const dotenv = require('dotenv');
+dotenv.config();
 // Initialize express-session to manage sessions
 app.use(session({ secret: 'your-secret-key', resave: false, saveUninitialized: false }));
 
@@ -15,7 +20,26 @@ app.use(session({ secret: 'your-secret-key', resave: false, saveUninitialized: f
 //     user: 'postgres',
 //     password: 'Abhi@2001',
 // })
+AWS.config.update({
+  accessKeyId:  process.env.ACCESS_KEY,
+  secretAccessKey:  process.env.SECRET_ACCESS_KEY,
+  region:  process.env.BUCKET_REGION,
+});
+console.log(AWS.config.update)
+const s4 = new AWS.S3();
 
+const bucketname = process.env.BUCKET_NAME;
+const bucketRegion =  process.env.BUCKET_REGION;
+const accessKey =  process.env.ACCESS_KEY;
+const secretAccessKey =  process.env.SECRET_ACCESS_KEY;
+console.log(bucketname,bucketRegion,accessKey)
+const s3 = new S3Client({ 
+  region: bucketRegion,
+  credentials: ({
+    accessKeyId: accessKey,    
+    secretAccessKey: secretAccessKey,  
+  }),
+});
 const mysql = require('mysql');
 
 const connection = mysql.createConnection({
@@ -121,92 +145,126 @@ const getTruckNumber1 = (request, response) => {
     );
 }
 const getTruck = (request, response) => {
-    const {crn}= request.query;
-    console.log(crn)
-    connection.query('select * from truck where crn=$1 ',[crn], (error, results) => {
-        if (error) {
-            throw error
-        }const trucksWithImageURLs = results.rows.map((truck) => {
-            const uploadRegistrationUrl = `http://localhost:9000/images/${truck.uploadRegistration}`;
-            const truckFrontSideWithNumberPlateUrl = `http://localhost:9000/images/${truck.truckFrontSideWithNumberPlate}`;
-            const truckBackSideWithNumberPlateUrl = `http://localhost:9000/images/${truck.truckBackSideWithNumberPlate}`;
-            const truckCabinUrl = `http://localhost:9000/images/${truck.truckCabin}`;
-            const truckOdometerUrl = `http://localhost:9000/images/${truck.truckOdometer}`;
-            const truckVideoUrl = `http://localhost:9000/images/${truck.truckVideo}`;
-            const truckPermitUrl = `http://localhost:9000/images/${truck.truckPermit}`;
-            const truckFitUrl = `http://localhost:9000/images/${truck.truckFit}`;
-            const truckPollutionCertificateUrl = `http://localhost:9000/images/${truck.truckPollutionCertificate}`;
-            const truckInsuranceCertificateUrl = `http://localhost:9000/images/${truck.truckInsuranceCertificate}`;
-            const truckOwnerPassportSizePhotoUrl = `http://localhost:9000/images/${truck.truckOwnerPassportSizePhoto}`;
-            const rightsideUrl = `http://localhost:9000/images/${truck.rightside}`;
-            const leftsideUrl = `http://localhost:9000/images/${truck.leftside}`;
+  const {crn}= request.query;
+  console.log(crn)
+  connection.query('select * from truck where crn=$1 ',[crn],async (error, results) => {
+      if (error) {
+        throw error;
+      }
 
-            return {
-              ...truck,
-              uploadRegistrationUrl,
-              truckFrontSideWithNumberPlateUrl,
-              truckBackSideWithNumberPlateUrl,
-              truckCabinUrl,
-              truckOdometerUrl,
-              truckVideoUrl,
-              truckPermitUrl,
-              truckFitUrl,
-              truckPollutionCertificateUrl,
-              truckInsuranceCertificateUrl,
-              truckOwnerPassportSizePhotoUrl,
-              rightsideUrl,
-              leftsideUrl
+      const trucksWithImageURLs = await Promise.all(
+        results.map(async (truck) => {
+          // Function to get the S3 URL for an image
+          const getImageUrl = async (imageName) => {
+            const params = {
+              Bucket: bucketname,
+              Key: imageName,
             };
-          });
+
+            const signedUrl = await s4.getSignedUrlPromise('getObject', params);
+            return signedUrl;
+          };
+
+          const uploadRegistrationUrl = await getImageUrl(truck.uploadRegistration);
+          const truckFrontSideWithNumberPlateUrl = await getImageUrl(truck.truckFrontSideWithNumberPlate);
+          const truckBackSideWithNumberPlateUrl = await getImageUrl(truck.truckBackSideWithNumberPlate);
+          const truckCabinUrl = await getImageUrl(truck.truckCabin);
+          const truckOdometerUrl = await getImageUrl(truck.truckOdometer);
+          const truckVideoUrl = await getImageUrl(truck.truckVideo);
+          const truckPermitUrl = await getImageUrl(truck.truckPermit);
+          const truckFitUrl = await getImageUrl(truck.truckFit);
+          const truckPollutionCertificateUrl = await getImageUrl(truck.truckPollutionCertificate);
+          const truckInsuranceCertificateUrl = await getImageUrl(truck.truckInsuranceCertificate);
+          const truckOwnerPassportSizePhotoUrl = await getImageUrl(truck.truckOwnerPassportSizePhoto);
+          const rightsideUrl = await getImageUrl(truck.rightside);
+          const leftsideUrl = await getImageUrl(truck.leftside);
+
+          return {
+            ...truck,
+            uploadRegistrationUrl,
+            truckFrontSideWithNumberPlateUrl,
+            truckBackSideWithNumberPlateUrl,
+            truckCabinUrl,
+            truckOdometerUrl,
+            truckVideoUrl,
+            truckPermitUrl,
+            truckFitUrl,
+            truckPollutionCertificateUrl,
+            truckInsuranceCertificateUrl,
+            truckOwnerPassportSizePhotoUrl,
+            rightsideUrl,
+            leftsideUrl,
+          };
+        })
+      );
+      response.status(200).json(trucksWithImageURLs);
+    }
+  );
+};
+    const getTruckverification = (request, response) => {
+      const { feildcrn } = request.query;
+      console.log(feildcrn);
+    
+      connection.query(
+        'SELECT t1.*, t2.ownername, t2.owneremail FROM truck AS t1 JOIN owner1 AS t2 ON t1.crn = t2.crn WHERE t1.feildcrn = ?',
+        [feildcrn],
+        async (error, results) => {
+          if (error) {
+            throw error;
+          }
+    
+          const trucksWithImageURLs = await Promise.all(
+            results.map(async (truck) => {
+              // Function to get the S3 URL for an image
+              const getImageUrl = async (imageName) => {
+                const params = {
+                  Bucket: bucketname,
+                  Key: imageName,
+                };
+    
+                const signedUrl = await s4.getSignedUrlPromise('getObject', params);
+                return signedUrl;
+              };
+    
+              const uploadRegistrationUrl = await getImageUrl(truck.uploadRegistration);
+              const truckFrontSideWithNumberPlateUrl = await getImageUrl(truck.truckFrontSideWithNumberPlate);
+              const truckBackSideWithNumberPlateUrl = await getImageUrl(truck.truckBackSideWithNumberPlate);
+              const truckCabinUrl = await getImageUrl(truck.truckCabin);
+              const truckOdometerUrl = await getImageUrl(truck.truckOdometer);
+              const truckVideoUrl = await getImageUrl(truck.truckVideo);
+              const truckPermitUrl = await getImageUrl(truck.truckPermit);
+              const truckFitUrl = await getImageUrl(truck.truckFit);
+              const truckPollutionCertificateUrl = await getImageUrl(truck.truckPollutionCertificate);
+              const truckInsuranceCertificateUrl = await getImageUrl(truck.truckInsuranceCertificate);
+              const truckOwnerPassportSizePhotoUrl = await getImageUrl(truck.truckOwnerPassportSizePhoto);
+              const rightsideUrl = await getImageUrl(truck.rightside);
+              const leftsideUrl = await getImageUrl(truck.leftside);
+    
+              return {
+                ...truck,
+                uploadRegistrationUrl,
+                truckFrontSideWithNumberPlateUrl,
+                truckBackSideWithNumberPlateUrl,
+                truckCabinUrl,
+                truckOdometerUrl,
+                truckVideoUrl,
+                truckPermitUrl,
+                truckFitUrl,
+                truckPollutionCertificateUrl,
+                truckInsuranceCertificateUrl,
+                truckOwnerPassportSizePhotoUrl,
+                rightsideUrl,
+                leftsideUrl,
+              };
+            })
+          );
     
           response.status(200).json(trucksWithImageURLs);
         }
       );
     };
-    const getTruckverification = (request, response) => {
-        const {feildcrn}= request.query;
-        console.log(feildcrn)
-        connection.query('SELECT t1.*, t2.ownername, t2.owneremail FROM truck AS t1 JOIN owner1 AS t2 ON t1.crn = t2.crn WHERE t1.feildcrn = ?' ,[feildcrn], (error, results) => {
-            if (error) {
-                throw error
-            }const trucksWithImageURLs = results.map((truck) => {
-                const uploadRegistrationUrl = `http://localhost:9000/images/${truck.uploadRegistration}`;
-                const truckFrontSideWithNumberPlateUrl = `http://localhost:9000/images/${truck.truckFrontSideWithNumberPlate}`;
-                const truckBackSideWithNumberPlateUrl = `http://localhost:9000/images/${truck.truckBackSideWithNumberPlate}`;
-                const truckCabinUrl = `http://localhost:9000/images/${truck.truckCabin}`;
-                const truckOdometerUrl = `http://localhost:9000/images/${truck.truckOdometer}`;
-                const truckVideoUrl = `http://localhost:9000/images/${truck.truckVideo}`;
-                const truckPermitUrl = `http://localhost:9000/images/${truck.truckPermit}`;
-                const truckFitUrl = `http://localhost:9000/images/${truck.truckFit}`;
-                const truckPollutionCertificateUrl = `http://localhost:9000/images/${truck.truckPollutionCertificate}`;
-                const truckInsuranceCertificateUrl = `http://localhost:9000/images/${truck.truckInsuranceCertificate}`;
-                const truckOwnerPassportSizePhotoUrl = `http://localhost:9000/images/${truck.truckOwnerPassportSizePhoto}`;
-                const rightsideUrl = `http://localhost:9000/images/${truck.rightside}`;
-                const leftsideUrl = `http://localhost:9000/images/${truck.leftside}`;
     
-                return {
-                  ...truck,
-                  uploadRegistrationUrl,
-                  truckFrontSideWithNumberPlateUrl,
-                  truckBackSideWithNumberPlateUrl,
-                  truckCabinUrl,
-                  truckOdometerUrl,
-                  truckVideoUrl,
-                  truckPermitUrl,
-                  truckFitUrl,
-                  truckPollutionCertificateUrl,
-                  truckInsuranceCertificateUrl,
-                  truckOwnerPassportSizePhotoUrl,
-                  rightsideUrl,
-                  leftsideUrl
-                };
-              });
-        
-              response.status(200).json(trucksWithImageURLs);
-            }
-          );
-        };
-const getSubLocations = (request, response) => {
+const getSubLocations = (request, response) => {  
     connection.query('select * from sub ', (error, results) => {
         if (error) {
             throw error
@@ -220,13 +278,13 @@ const getSub = (request, response) => {
         if (error) {
             throw error
         }
-        response.status(200).json(results)
+        response.status(200).json(results)  
     })
 }
-const getSubLocationsById = (request, respose) => {
+const getSubLocationsById = (request, respose) => {  
     const id = parseInt(request.params.id)
     connection.query('select * from sub where id=?', [id], (error, results) => {
-        if (error) {
+        if (error) { 
             throw error
         }
         respose.status(200).json(results)
@@ -234,7 +292,7 @@ const getSubLocationsById = (request, respose) => {
 }
 const getVerified = (request, response) => {
     const { feildcrn, status } = request.query;
-    
+    console.log('ff',feildcrn,'ss',status)
     if (status === 'Completed') {
         connection.query('SELECT * FROM truck WHERE status = ? and feildcrn = ?', [status, feildcrn], (error, results) => {
             if (error) {
@@ -244,15 +302,15 @@ const getVerified = (request, response) => {
                 response.status(200).json(results);
             }
         });
-    } else {
+    } else {   
         // Handle other status conditions or return an empty array
         response.status(200).json([]);
-    }
+    }   
 }
-
-const createSublocations = (request, response) => {
-    const {
-        loadingSublocations,
+     
+const createSublocations = (request, response) => {    
+    const {  
+        loadingSublocations,  
         unloadingSublocations,
         distance,
     } = request.body
@@ -271,7 +329,7 @@ const deleteSubLocations = (request, response) => {
         }
         response.status(200).send(` deleted  sublocation with id:${id}`)
     })
-}
+}    
 const getTruckById = (request, respose) => {
     const id = parseInt(request.params.id)
     connection.query('select * from truck where id=?', [id], (error, results) => {
@@ -281,62 +339,166 @@ const getTruckById = (request, respose) => {
         respose.status(200).json(results.rows)
     })
 }
-const createTruck = (request, response) => {
-    const {
+const createTruck = async (request, response) => {
+    try {
+      const {
         truckNumber,
         truckMaxWeight,
         truckWheels,
         truckPermitValidity,
         truckFitValidity,
-        truckPollutionCertificateValidity, 
+        truckPollutionCertificateValidity,
         truckInsuranceCertificateValidity,
         name,
         date,
         crn,
         feildcrn
-
-    } = request.body;
-
-    const { 
+      } = request.body;
+  
+      const {
         uploadRegistration,
         truckFrontSideWithNumberPlate,
         truckBackSideWithNumberPlate,
         rightside,
         leftside,
-        truckCabin,          // Cabin image
-        truckOdometer,       // Odometer image
-        truckVideo,           // Video file
+        truckCabin, // Cabin image
+        truckOdometer, // Odometer image
+        truckVideo, // Video file
         truckPermit,
         truckFit,
         truckPollutionCertificate,
         truckInsuranceCertificate,
         truckOwnerPassportSizePhoto,
-    } = request.files;
-    const filenames = {
-        uploadRegistration: uploadRegistration[0].filename,
-        truckFrontSideWithNumberPlate: truckFrontSideWithNumberPlate[0].filename,
-        truckBackSideWithNumberPlate: truckBackSideWithNumberPlate[0].filename,
-        truckCabin: truckCabin[0].filename,
-        truckOdometer: truckOdometer[0].filename,
-        truckVideo: truckVideo[0].filename,
-        truckPermit: truckPermit[0].filename,
-        truckFit: truckFit[0].filename,
-        rightside: rightside[0].filename,
-        leftside: leftside[0].filename,
-
-        truckPollutionCertificate: truckPollutionCertificate[0].filename,
-        truckInsuranceCertificate: truckInsuranceCertificate[0].filename,
-        truckOwnerPassportSizePhoto: truckOwnerPassportSizePhoto[0].filename
+      } = request.files;
+  
+      const filenames = {
+        uploadRegistration: `registration_${uuidv4()}.jpg`,
+        truckFrontSideWithNumberPlate: `front_${uuidv4()}.jpg`,
+        truckBackSideWithNumberPlate: `back_${uuidv4()}.jpg`,
+        truckCabin: `cabin_${uuidv4()}.jpg`,
+        truckOdometer: `odometer_${uuidv4()}.jpg`,
+        truckVideo: `video_${uuidv4()}.mp4`,
+        truckPermit: `permit_${uuidv4()}.jpg`,
+        truckFit: `fit_${uuidv4()}.jpg`,
+        rightside: `rightside_${uuidv4()}.jpg`,
+        leftside: `leftside_${uuidv4()}.jpg`,
+        truckPollutionCertificate: `pollution_${uuidv4()}.jpg`,
+        truckInsuranceCertificate: `insurance_${uuidv4()}.jpg`,
+        truckOwnerPassportSizePhoto: `passport_${uuidv4()}.jpg`,
+      };
+  
+      // Upload files to AWS S3
+      await Promise.all([
+        uploadFileToS3(uploadRegistration[0], filenames.uploadRegistration),
+        uploadFileToS3(truckFrontSideWithNumberPlate[0], filenames.truckFrontSideWithNumberPlate),
+        uploadFileToS3(truckBackSideWithNumberPlate[0], filenames.truckBackSideWithNumberPlate),
+        uploadFileToS3(rightside[0], filenames.rightside),
+        uploadFileToS3(leftside[0], filenames.leftside),
+        uploadFileToS3(truckCabin[0], filenames.truckCabin),
+        uploadFileToS3(truckOdometer[0], filenames.truckOdometer),
+        uploadFileToS3(truckVideo[0], filenames.truckVideo),
+        uploadFileToS3(truckPermit[0], filenames.truckPermit),
+        uploadFileToS3(truckFit[0], filenames.truckFit),
+        uploadFileToS3(truckPollutionCertificate[0], filenames.truckPollutionCertificate),
+        uploadFileToS3(truckInsuranceCertificate[0], filenames.truckInsuranceCertificate),
+        uploadFileToS3(truckOwnerPassportSizePhoto[0], filenames.truckOwnerPassportSizePhoto),
+      ]);
+  
+      // Insert data into the MySQL database
+      const results = await insertTruckDataIntoDB({
+        truckNumber,
+        filenames,
+        truckMaxWeight,
+        truckWheels,
+        truckPermitValidity,
+        truckFitValidity,
+        truckPollutionCertificateValidity,
+        truckInsuranceCertificateValidity,
+        name,
+        date,
+        crn,
+        feildcrn
+      });
+  
+      response.status(200).send(`Truck added with ID: ${results.insertId}`);
+    } catch (error) {
+      console.error(error);
+      response.status(500).send("Internal Server Error");
     }
-    connection.query('insert into truck (truckNumber, uploadRegistration, truckMaxWeight, truckWheels, truckFrontSideWithNumberPlate, truckBackSideWithNumberPlate, truckCabin, truckOdometer, truckVideo, truckPermit, truckFit, truckPollutionCertificate, truckInsuranceCertificate, truckOwnerPassportSizePhoto,truckPermitValidity,truckFitValidity,truckPollutionCertificateValidity,truckInsuranceCertificateValidity, crn,name,date,rightside,leftside,feildcrn) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    [truckNumber, filenames.uploadRegistration, truckMaxWeight, truckWheels, filenames.truckFrontSideWithNumberPlate, filenames.truckBackSideWithNumberPlate, filenames.truckCabin, filenames.truckOdometer, filenames.truckVideo, filenames.truckPermit, filenames.truckFit, filenames.truckPollutionCertificate, filenames.truckInsuranceCertificate, filenames.truckOwnerPassportSizePhoto, truckPermitValidity, truckFitValidity, truckPollutionCertificateValidity, truckInsuranceCertificateValidity, crn,name,date,filenames.rightside,filenames.leftside,feildcrn],        (error, results) => {
-            if (error) {
-                throw error;
-            }
-            response.status(200).send(`Truck added with ID: ${results.insertId}`);
+  };
+  
+  // Function to insert truck data into the MySQL database
+  const insertTruckDataIntoDB = async ({
+    truckNumber,
+    filenames,
+    truckMaxWeight,
+    truckWheels,
+    truckPermitValidity,
+    truckFitValidity,
+    truckPollutionCertificateValidity,
+    truckInsuranceCertificateValidity,
+    name,
+    date,
+    crn,
+    feildcrn
+  }) => {
+    return new Promise((resolve, reject) => {
+      connection.query(
+        'insert into truck (truckNumber, uploadRegistration, truckMaxWeight, truckWheels, truckFrontSideWithNumberPlate, truckBackSideWithNumberPlate, truckCabin, truckOdometer, truckVideo, truckPermit, truckFit, truckPollutionCertificate, truckInsuranceCertificate, truckOwnerPassportSizePhoto, truckPermitValidity, truckFitValidity, truckPollutionCertificateValidity, truckInsuranceCertificateValidity, crn, name, date, rightside, leftside, feildcrn) values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        [
+          truckNumber,
+          filenames.uploadRegistration,
+          truckMaxWeight,
+          truckWheels,
+          filenames.truckFrontSideWithNumberPlate,
+          filenames.truckBackSideWithNumberPlate,
+          filenames.truckCabin,
+          filenames.truckOdometer,
+          filenames.truckVideo,
+          filenames.truckPermit,
+          filenames.truckFit,
+          filenames.truckPollutionCertificate,
+          filenames.truckInsuranceCertificate,
+          filenames.truckOwnerPassportSizePhoto,
+          truckPermitValidity,
+          truckFitValidity,
+          truckPollutionCertificateValidity,
+          truckInsuranceCertificateValidity,
+          crn,
+          name,
+          date,
+          filenames.rightside,
+          filenames.leftside,
+          feildcrn
+        ],
+        (error, results) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(results);
+          }
         }
-    );
-};
+      );
+    });
+  };
+  
+  // Function to upload a file to AWS S3
+  const uploadFileToS3 = async (file, filename) => {
+    const params = {
+      Bucket: bucketname,
+      Key: filename,
+      Body: fs.createReadStream(file.path),
+      ContentType: file.mimetype,
+    };
+  
+    try {
+      const command = new PutObjectCommand(params);
+      await s3.send(command);
+    } catch (error) {
+      console.error('Error uploading file to S3:', error);
+      throw error;
+    }
+  };
 
 const getBook = (request, response) => {
     connection.query('select * from booking ', (error, results) => {
@@ -375,30 +537,126 @@ const getBookById = (request, respose) => {
         respose.status(200).json(results)
     })
 }
-const createDriver = (request, response) => {
-    const {
+const createDriver = async (request, response) => {
+    try {
+      const {
         driverName,
         phoneNumber,
         email,
-        licenseFront,
-        licenseBack,
         licenseIssuedDate,
         licenseValidityDate,
+        dateOfJoining,
+        crn,
+      } = request.body;
+  console.log(request.body)
+      const {
+        licenseFront,
+        licenseBack,
         aadharFront,
         aadharBack,
         policeVerificationCertificate,
         healthCertificate,
         driverPhoto,
-        dateOfJoining,
+      } = request.files;
+  console.log(request.files)
+      const filenames = {
+        licenseFront: `license_front_${uuidv4()}.jpg`,
+        licenseBack: `license_back_${uuidv4()}.jpg`,  
+        aadharFront: `aadhar_front_${uuidv4()}.jpg`,
+        aadharBack: `aadhar_back_${uuidv4()}.jpg`,
+        policeVerificationCertificate: `police_verification_${uuidv4()}.jpg`,
+        healthCertificate: `health_certificate_${uuidv4()}.jpg`,
+        driverPhoto: `driver_photo_${uuidv4()}.jpg`,
+      };
+  
+      // Upload files to AWS S3
+      await Promise.all([
+        uploadFileToS(licenseFront[0], filenames.licenseFront),
+        uploadFileToS(licenseBack[0], filenames.licenseBack),
+        uploadFileToS(aadharFront[0], filenames.aadharFront),
+        uploadFileToS(aadharBack[0], filenames.aadharBack),
+        uploadFileToS(policeVerificationCertificate[0], filenames.policeVerificationCertificate),
+        uploadFileToS(healthCertificate[0], filenames.healthCertificate),
+        uploadFileToS(driverPhoto[0], filenames.driverPhoto),
+      ]);
+  
+      // Insert data into the MySQL database
+      const results = await insertDriverDataIntoDB({
+        driverName,
+        phoneNumber,
+        email,
+        licenseIssuedDate,
+        licenseValidityDate,    
+        dateOfJoining,  
         crn,
-    } = request.body
-    connection.query('insert into driver (driverName,phoneNumber, email, licenseFront, licenseBack, licenseIssuedDate,licenseValidityDate,aadharFront, aadharBack, policeVerificationCertificate, healthCertificate,driverPhoto, dateOfJoining,crn) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [driverName, phoneNumber, email, licenseFront, licenseBack, licenseIssuedDate, licenseValidityDate, aadharFront, aadharBack, policeVerificationCertificate, healthCertificate, driverPhoto, dateOfJoining, crn], (error, results) => {
-        if (error) {
-            throw error
+        filenames,
+      });
+  
+      response.status(200).send(`Driver added with ID: ${results.insertId}`);
+    } catch (error) {
+      console.error(error);
+      response.status(500).send("Internal Server Error");
+    }
+  };
+  
+  // Function to insert driver data into the MySQL database
+  const insertDriverDataIntoDB = async ({
+    driverName,
+    phoneNumber,
+    email,
+    licenseIssuedDate,
+    licenseValidityDate,
+    dateOfJoining,
+    crn,
+    filenames,
+  }) => {
+    return new Promise((resolve, reject) => {
+      connection.query(
+        'insert into driver (driverName,phoneNumber, email, licenseFront, licenseBack, licenseIssuedDate,licenseValidityDate,aadharFront, aadharBack, policeVerificationCertificate, healthCertificate,driverPhoto, dateOfJoining,crn) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        [
+          driverName,
+          phoneNumber,
+          email,
+          filenames.licenseFront,
+          filenames.licenseBack,
+          licenseIssuedDate,
+          licenseValidityDate,
+          filenames.aadharFront,
+          filenames.aadharBack,
+          filenames.policeVerificationCertificate,
+          filenames.healthCertificate,
+          filenames.driverPhoto,
+          dateOfJoining,
+          crn,
+        ],
+        (error, results) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(results);
+          }
         }
-        response.status(200).send(`truck add with id:${results.insertid}`)
-    })
-}
+      );
+    });
+  };
+  
+  // Function to upload a file to AWS S3
+  const uploadFileToS = async (file, filename) => {
+    const params = {
+      Bucket: bucketname,
+      Key: filename,
+      Body: fs.createReadStream(file.path),
+      ContentType: file.mimetype,
+    };
+  
+    try {
+      const command = new PutObjectCommand(params);
+      await s3.send(command);
+    } catch (error) {
+      console.error('Error uploading file to S3:', error);
+      throw error;
+    }
+  };
 const createDriving = (request, response) => {
     const {
         name,
@@ -581,15 +839,18 @@ const deleteTruck = (request, response) => {
 // }
 const getBooking = (request, response) => {
     const { crn } = request.params;
-    console.log(crn)
-    connection.query(`select * from booking WHERE crn = ? `, [crn], (error, results) => {
+    console.log(crn);
+    connection.query('SELECT * FROM booking WHERE crn = ?', [crn], (error, results) => {
         if (error) {
-            throw error;
+            console.error('Error fetching data:', error);
+            response.status(500).json({ error: 'Internal Server Error' });
+            return;
         }
-        response.status(200).json(results)
-        console.log(results)
-    })
-}
+        response.status(200).json(results);
+        console.log(results);
+    });
+};
+
 const getBooking1 = (request, response) => {
     const { crn } = request.query;
     const {phonenumber} =request.query;

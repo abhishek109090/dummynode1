@@ -12,6 +12,7 @@ const db6=require('./post')
 const upload = multer({ dest: 'uploads/' });
 const db4=require('./Agent')
 const fs = require('fs')
+
 const port = 9001
 app.use(bodyParser.json())
 app.use(
@@ -75,7 +76,7 @@ app.use(
         }
     });
 app.get("/",cors(),async (req,res)=>{
-    const data = await getitems()
+    const data = await getItems()
     console.log("all the details");
      res.send(data)
 
@@ -144,6 +145,8 @@ app.get('/users', db.getUsers)
 app.get('/agentusers', db.getAgentUsers)
 
 app.post('/market',db.createAgent)
+app.put('/updatePassword',db.updateonwer1)
+app.put('/updatePassword1',db.updateAgent)
 
 app.post('/auth',db.authenticateUser)
 app.post('/authAgent',db.authenticateAgent)
@@ -157,7 +160,7 @@ app.get('/AgentInfo1', db4.getAgentInfo1)
 app.get('/AgentFetch', db4.getAgent)
 
 app.post('/Agentauth', db4.authenticateUser)
-app.get('/Trucks', db4.getTrucks)
+app.get('/Trucks', db4.getTrucks)  
 app.get('/Info', db4.getInfo)
 app.get('/sublocations', db5.getSubLocations)
 app.post('/addsublocations', db5.createSublocations)
@@ -206,7 +209,14 @@ app.get('/truckNumber2', db5.getTruckNumber2)
 app.get('/truckNumber1', db5.getTruckNumber1) 
 
 app.put('/UpdateTruckStatus', db5.updatetruckStatus) 
-app.post('/driver', upload.single('driverPhoto'), db5.createDriver)
+app.post('/driver',upload.fields([
+  { name: 'licenseFront', maxCount: 1 },
+  { name: 'licenseBack', maxCount: 1 },
+  { name: 'aadharFront', maxCount: 1 },
+  { name: 'aadharBack', maxCount: 1 },
+  { name: 'driverPhoto', maxCount: 1 },
+  { name: 'policeVerificationCertificate', maxCount: 1 },
+  { name: 'healthCertificate', maxCount: 1 }]), db5.createDriver)
 app.get('/fetchdriver', db5.getDriver)
 app.get('/verified', db5.getVerified)
 app.get('/tbr', db5.getTbr)
