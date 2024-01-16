@@ -145,9 +145,9 @@ const getTruckNumber1 = (request, response) => {
     );
 }
 const getTruck = (request, response) => {
-  const {crn}= request.query;
-  console.log(crn)
-  connection.query('select * from truck where crn=$1 ',[crn],async (error, results) => {
+  const {crn}= request.params;
+  console.log('crn',crn)
+  connection.query('select * from truck where crn = ? ',[crn],async (error, results) => {
       if (error) {
         throw error;
       }
@@ -163,7 +163,7 @@ const getTruck = (request, response) => {
 
             const signedUrl = await s4.getSignedUrlPromise('getObject', params);
             return signedUrl;
-          };
+          };     
 
           const uploadRegistrationUrl = await getImageUrl(truck.uploadRegistration);
           const truckFrontSideWithNumberPlateUrl = await getImageUrl(truck.truckFrontSideWithNumberPlate);
@@ -178,10 +178,10 @@ const getTruck = (request, response) => {
           const truckOwnerPassportSizePhotoUrl = await getImageUrl(truck.truckOwnerPassportSizePhoto);
           const rightsideUrl = await getImageUrl(truck.rightside);
           const leftsideUrl = await getImageUrl(truck.leftside);
-
-          return {
-            ...truck,
-            uploadRegistrationUrl,
+  
+          return {   
+            ...truck,    
+            uploadRegistrationUrl,  
             truckFrontSideWithNumberPlateUrl,
             truckBackSideWithNumberPlateUrl,
             truckCabinUrl,
@@ -332,7 +332,7 @@ const deleteSubLocations = (request, response) => {
 }    
 const getTruckById = (request, respose) => {
     const id = parseInt(request.params.id)
-    connection.query('select * from truck where id=?', [id], (error, results) => {
+    connection.query('select * from truck where id= ?', [id], (error, results) => {
         if (error) {
             throw error
         }
@@ -694,24 +694,25 @@ const createBook = (request, response) => {
         to,
         fromPincode,
         toPincode,
-        totalKilometers,
+        totalkilometers,
         totalPrice,
         name,   
         phonenumber,
         fromAddress,
         toAddress,
         truckMaxWeight,
+        loadweight,
         type,  
         agentId,    
-
+  
     } = request.body  
-    connection.query('insert into booking ( truckNumber, truckWheels, fromSublocation, toSublocation, crn, date,  `from`, time, `to`, fromPincode, toPincode, totalKilometers, totalPrice, name, fromAddress, toAddress,truckMaxWeight,phonenumber,type,tbr,agentId) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [truckNumber, truckWheels, fromSublocation, toSublocation, crn, date, from, time, to, fromPincode, toPincode, totalKilometers, totalPrice, name, fromAddress, toAddress, truckMaxWeight, phonenumber, type,tbr,agentId], (error, results) => {
-        if (error) {
-            throw error
+    connection.query('insert into booking ( truckNumber, truckWheels, fromSublocation, toSublocation, crn, date,  `from`, time, `to`, fromPincode, toPincode, totalkilometers, totalPrice, name, fromAddress, toAddress,truckMaxWeight,phonenumber,loadweight,type,tbr,agentId) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [truckNumber, truckWheels, fromSublocation, toSublocation, crn, date, from, time, to, fromPincode, toPincode, totalkilometers, totalPrice, name, fromAddress, toAddress, truckMaxWeight, phonenumber,loadweight, type,tbr,agentId], (error, results) => {
+        if (error) {  
+            throw error  
         }
         response.status(200).send(`truck add with id:${results.insertid}`)
-    })
-}
+    })   
+}    
 const delTruck = (request, response) => {
     const truckNumber = request.params.truckNumber;
     connection.query('DELETE FROM post1  WHERE truckNumber=?', [truckNumber], (error, results) => {

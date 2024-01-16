@@ -128,8 +128,41 @@ const getPost = (request, response) => {
       response.status(200).json(results);
   });
 };
+const getPincode = (request, response) => {
+  const { pincode } = request.params;
+  console.log(pincode);
+  connection.query('SELECT pincode, sublocation,location FROM pincodetable WHERE pincode = ?', [pincode], (error, results) => {
+      if (error) {
+          console.error('Error fetching data:', error);
+          response.status(500).send('Internal Server Error');
+          return;
+      }
+      response.status(200).json(results);
+  }); 
+}; 
+const getSelectedPincode = (request, response) => {
+  const { pincode, sublocation } = request.params;
+  console.log('Selected Pincode:', pincode);
+  console.log('Selected Sublocation:', sublocation);
 
-const getPostStatus = (request, response) => {
+  const query = `SELECT location, mainLocation, sublocation,pincode FROM pincodetable WHERE pincode = ? AND sublocation = ?`;
+
+  connection.query(query, [pincode, sublocation], (error, results) => {
+    if (error) {
+      console.error('Error fetching data:', error);
+      response.status(500).json({ error: 'Internal Server Error' });
+      return; 
+    }    
+   
+    if (results.length === 0) {
+      response.status(404).json({ error: 'Location details not found for the specified pincode and sublocation.' });
+    } else {  
+      response.status(200).json(results[0]);  
+      console.log('Location Details:', results[0]);
+    }
+  });
+};     
+const getPostStatus = (request, response) => {   
     const { crn, truckNumber } = request.query;
     console.log(crn, truckNumber);
   
@@ -172,11 +205,11 @@ const getPostStatus = (request, response) => {
               } else {
                 // Previous booking is either not completed or its booking date has not expired
                 response.status(200).json({ canPost: false, message: 'Truck already booked by an agent.' });
-              }
+              }    
             } else {
               // No previous booking exists, allow reposting
               response.status(200).json({ canPost: true });
-            }
+            }  
           }
         );
       } else {
@@ -204,6 +237,39 @@ const getPostByTruck=(request,respose)=>{
         respose.status(200).json(results)
     })
 }
+const getPostBypincode=(request,respose)=>{
+  const pincode = parseInt(request.params.id)
+  connection.query('select * from Srikakulam where PINCODES=?',[pincode],(error,results)=>{
+      if(error){
+          throw error 
+      }
+      respose.status(200).json(results)
+  })  
+}     
+const getUpdateBypincode = (request, response) => {
+  const id = parseInt(request.params.id);
+  const {
+    COUNTRY,
+    STATE,
+    DISTRICT,
+    MANDAL,
+    VILLAGES,
+    PINCODES
+  } = request.body;
+console.log(request.body)
+  connection.query(
+    'UPDATE Srikakulam SET COUNTRY = ?, STATE = ?, DISTRICT = ?, MANDAL = ?, VILLAGES = ?, PINCODES = ? WHERE id = ?',
+    [COUNTRY, STATE, DISTRICT, MANDAL, VILLAGES, PINCODES, id],
+    (error, results) => {
+      if (error) {
+        throw error;
+      }
+      response.status(200).json(results);
+      console.log(results)
+    }  
+  );
+};
+
 const createPost=(request,response)=>{
    const {  
     truckNumber,
@@ -266,7 +332,7 @@ const updatePost=(request,response)=>{
         }
         response.status(200).send(`truck updated with id:${id}`) 
        })
-} 
+}   
 const deletePost = (request, response) => {
     const id = parseInt(request.params.id);
     connection.query('DELETE FROM post WHERE id=?', [id], (error, results) => {
@@ -300,6 +366,30 @@ const setPost=(request,response)=>{
         response.status(200).send(` deleted  truck with id:${id}`)
     })
 }
+
+const sublocation = (request, response) => {
+  const { location } = request.query; // Use req.query instead of req.params
+  console.log('Received request for location:', location);
+
+  if (!location) {
+    return response.status(400).json({ error: 'Location parameter is required' });
+  }
+
+  const query = `SELECT * FROM sublocation WHERE ${location} IS NOT NULL`;
+  const values = [];
+
+  connection.query(query, values, (error, results) => {
+    if (error) {
+      console.error('Error fetching sublocations:', error);
+      response.status(500).json({ error: 'Internal Server Error' });
+    } else {
+      console.log('results',results)
+      const sublocations = results.map((result) => result.sublocation);
+      console.log('Sublocations:', sublocations);
+      response.status(200).json({ results });
+    }              
+  });                                   
+};  
 function requireAuth(req, res, next) {
     if (!req.session.crn) {
       // User is not authenticated, redirect to the login page or send an unauthorized response
@@ -307,7 +397,7 @@ function requireAuth(req, res, next) {
     }
     // User is authenticated, continue to the next middleware or route handler
     next();
-  }
+  }   
   
   // Example protected route using the requireAuth middleware
   app.get('/protected-route', requireAuth, (req, res) => {
@@ -328,4 +418,9 @@ module.exports = {
     deletePost1,
     deletePost,
     getPostByTruck,
+    getPincode,
+    getSelectedPincode,
+    getPostBypincode,
+    getUpdateBypincode,
+    sublocation
 }       

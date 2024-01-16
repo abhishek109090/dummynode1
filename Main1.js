@@ -164,7 +164,7 @@ app.get('/Trucks', db4.getTrucks)
 app.get('/Info', db4.getInfo)
 app.get('/sublocations', db5.getSubLocations)
 app.post('/addsublocations', db5.createSublocations)
-app.get('/sub', db5.getSub)
+app.get('/sub', db5.getSub)  
 
 app.delete('/deletesublocations', db5.deleteSubLocations)
 app.get('./sublocations/:id',db5.getSubLocationsById)
@@ -174,7 +174,7 @@ app.put('/booking/:id/updatePaymentStatus', db5.getPaymentUpdate)
 app.get('/table1', db4.getTable1) 
 app.get('/table2', db4.getTable2)
 app.get('/table3', db4.getTable3)
-
+ 
 app.get('/Agent', db4.getOwner)
 app.get('/Agent/:id', db4.getOwnerById)
 app.post('/Agent/',upload.fields([
@@ -189,25 +189,31 @@ app.get('/PostTruck', db6.getPostTruck)
 app.get('/location', db6.getLocation)
 app.get('/Bookings', db4.getBookDate)
 app.get('/PostingStatus', db6.getPostStatus)
+app.get('/subloc', db6.sublocation)
 
 app.get('/Post', db6.getPost)
 app.get('/Post/:id', db6.getPostById)
 app.get('/Posting/:id', db6.getPostByTruck)
+app.get('/Pincode/:id', db6.getPostBypincode)
+app.put('/Pincode/:id', db6.getUpdateBypincode)
 
-app.post('/Post/', db6.createPost) 
-app.post('/Post1/', db6.createPost1) 
-
-app.put('/Post/:id', db6.updatePost) 
-app.delete('/Post/:id', db6.deletePost)
-app.delete('/Post1/:id', db6.deletePost1)
-
+app.get('/fetchpincode/:pincode', db6.getPincode)
+app.get('/details/:pincode/:sublocation', db6.getSelectedPincode)
+    
+app.post('/Post/', db6.createPost)   
+app.post('/Post1/', db6.createPost1)     
+      
+app.put('/Post/:id', db6.updatePost)     
+app.delete('/Post/:id', db6.deletePost)  
+app.delete('/Post1/:id', db6.deletePost1)  
+             
 app.get('/TruckPost/:truckNumber',db6.setPost)
 app.get('/checkTruckStatus', db5.getTruckStatus)
-
+         
 app.get('/truckNumber', db5.getTruckNumber)
 app.get('/truckNumber2', db5.getTruckNumber2)
 app.get('/truckNumber1', db5.getTruckNumber1) 
-
+     
 app.put('/UpdateTruckStatus', db5.updatetruckStatus) 
 app.post('/driver',upload.fields([
   { name: 'licenseFront', maxCount: 1 },
@@ -219,8 +225,8 @@ app.post('/driver',upload.fields([
   { name: 'healthCertificate', maxCount: 1 }]), db5.createDriver)
 app.get('/fetchdriver', db5.getDriver)
 app.get('/verified', db5.getVerified)
-app.get('/tbr', db5.getTbr)
-
+app.get('/tbr', db5.getTbr)  
+  
 app.get('/book', db5.getBook) 
 app.get('/book/:id', db5.getBookById)
 app.post('/book', db5.createBook)
@@ -236,15 +242,15 @@ app.post('/addnewrecord', db5.createDriving)
 
 app.put('/booking/:id', db4.deleteBooking)
 app.use('/uploads', express.static('uploads'));
-app.get('/truck', db5.getTruck)
-app.get('/truckverify', db5.getTruckverification)
+app.get('/truck/:crn', db5.getTruck)
+app.get('/truckverify', db5.getTruckverification)  
 
-app.get('/truck/:id', db5.getTruckById)
+app.get('/truckID/:id', db5.getTruckById)
 app.post('/Owner', upload.fields([
-  { name: 'uploadAadhar', maxCount: 1 },
+  { name: 'uploadAadhar', maxCount: 1 },  
   { name: 'uploadPan', maxCount: 1 }
 ]),db.createOwner1);
-app.post('/truck', upload.fields([
+app.post('/truck', upload.fields([  
   { name: 'uploadRegistration', maxCount: 1 },
   { name: 'truckFrontSideWithNumberPlate', maxCount: 1 },
   { name: 'truckBackSideWithNumberPlate', maxCount: 1 },

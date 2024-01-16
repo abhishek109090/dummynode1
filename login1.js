@@ -18,18 +18,18 @@ dotenv.config();
 //     user: 'postgres',
 //     password: 'Abhi@2001',
 // })
-const mysql = require('mysql');
+const mysql = require('mysql');  
 
 const connection = mysql.createConnection({
   host: '68.178.149.116', 
   port:'3306',
-  user: 'truckbooking',
-  password: 'truckbooking',
-  database: 'truckbooking',
-  connectTimeout: 30000,
- 
-});                            
- 
+  user: 'truckbooking',  
+  password: 'truckbooking',     
+  database: 'truckbooking',    
+  connectTimeout: 30000,         
+             
+});                                 
+  
 connection.connect((err,connection) => {
   if (err) {
     console.error('Error connecting to MySQL:', err.stack);
@@ -122,8 +122,8 @@ function generateCRN() {
       (error, results) => {
         if (error) {
           throw error;
-        }
-     
+        }  
+       
         // Check if results is defined and has length property
         if (results && results.length > 0) {
           // Authentication successful, return user data
@@ -208,7 +208,7 @@ function generateCRN() {
           district,
           state,
           feildcrn,
-          ownerId,
+          
         } = request.body;
     
         const { uploadAadhar, uploadPan } = request.files;
@@ -247,7 +247,7 @@ function generateCRN() {
           district,
           state,
           feildcrn,
-          ownerId,
+    
           crn,
           filenames,
         });
@@ -276,7 +276,8 @@ function generateCRN() {
         throw error;  
       }
     };
-    
+    const ownerId = generateRandomAgentId();
+
     // Function to insert owner data into the MySQL database
     const insertOwnerDataIntoDB = async ({
       ownername,
@@ -300,11 +301,12 @@ function generateCRN() {
       district,
       state,
       feildcrn,
-      ownerId,
+    
       crn,
       filenames,
     }) => {
       return new Promise((resolve, reject) => {
+        
         connection.query(
           `INSERT INTO owner1 
           (ownername, owneremail, userType, phonenumber, password, agentNumber, bankName, holderName, 
@@ -348,7 +350,11 @@ function generateCRN() {
         );
       });
     };
-    
+    function generateRandomAgentId() {
+      const min = 10000000; // Minimum 6-digit number
+      const max = 99999999; // Maximum 6-digit number
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
   const authenticateAgent = (request, response) => {
     const { phonenumber, password } = request.body;
   
