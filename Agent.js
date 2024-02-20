@@ -26,7 +26,7 @@ AWS.config.update({
   secretAccessKey:  process.env.SECRET_ACCESS_KEY,
   region:  process.env.BUCKET_REGION,
 });
-console.log(AWS.config.update)
+
 const s4 = new AWS.S3();
 
 const mysql = require('mysql');
@@ -34,7 +34,7 @@ const bucketname = process.env.BUCKET_NAME;
 const bucketRegion =  process.env.BUCKET_REGION;
 const accessKey =  process.env.ACCESS_KEY;
 const secretAccessKey =  process.env.SECRET_ACCESS_KEY;
-console.log(bucketname,bucketRegion,accessKey)
+
 const s3 = new S3Client({
   region: bucketRegion,
   credentials: ({
@@ -42,58 +42,93 @@ const s3 = new S3Client({
     secretAccessKey: secretAccessKey,
   }),
 });
-const connection = mysql.createConnection({
-  host: '68.178.149.116', 
-  port:'3306',
+// const connection = mysql.createConnection({
+//   host: '68.178.149.116', 
+//   port:'3306',
+//   user: 'truckbooking',
+//   password: 'truckbooking',
+//   database: 'truckbooking',
+//   connectTimeout: 30000,
+ 
+// });                            
+ 
+// connection.connect((err,connection) => {
+//   if (err) {
+//     console.error('Error connecting to MySQL:', err.stack);
+//     return;
+//   } 
+
+
+
+//   // Release the connection when done
+
+// });  
+// connection.on('error', (err) => {
+//   if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+//     console.error('Database connection was closed.');
+//   } else if (err.code === 'ER_CON_COUNT_ERROR') {
+//     console.error('Database has too many connections.');
+//   } else if (err.code === 'ECONNRESET') {
+//     console.error('Connection to database was reset.');
+//   } else { 
+//     console.error('Unexpected database error:', err.message);    
+//   }
+// });
+// const sessionStore = new MySQLStore({   
+//   expiration: 86400000, // Set the session expiration time (in milliseconds)
+//   createDatabaseTable: true,
+//   schema: {       
+//     tableName: 'agent',  
+//     columnNames: {       
+//       session_id: 'session_id',   
+//       expires: 'expires',
+//       data: 'data',
+//     },
+//   },
+// }, connection);
+const pool = mysql.createPool({
+  // connectionLimit: 10, // Adjust as needed
+  host: '68.178.149.116',
+  port: '3306',
   user: 'truckbooking',
   password: 'truckbooking',
   database: 'truckbooking',
-  connectTimeout: 30000,
- 
-});                            
- 
-connection.connect((err,connection) => {
+});
+
+pool.getConnection((err, connection) => {
   if (err) {
-    console.error('Error connecting to MySQL:', err.stack);
-    return;
-  } 
+      console.error('Error getting connection from pool', err);
+      return; 
+  }
 
-  console.log('Connected to MySQL as ID:', connection.threadId);
+  console.log('Connected to database');
+  connection.release();
+});
 
-  // Release the connection when done
-
-});  
-connection.on('error', (err) => {
+pool.on('error', (err) => {
+  console.error('DB pool error', err);
   if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-    console.error('Database connection was closed.');
-  } else if (err.code === 'ER_CON_COUNT_ERROR') {
-    console.error('Database has too many connections.');
-  } else if (err.code === 'ECONNRESET') {
-    console.error('Connection to database was reset.');
-  } else { 
-    console.error('Unexpected database error:', err.message);
+      // Reconnect to the database
+      pool.getConnection((err, connection) => {
+          if (err) {
+              console.error('Error getting connection from pool after reconnect', err);
+              return;
+          }
+          console.log('Reconnected to database');
+          connection.release();
+      }); 
+  } else {
+      throw err;
   }
 });
-const sessionStore = new MySQLStore({
-  expiration: 86400000, // Set the session expiration time (in milliseconds)
-  createDatabaseTable: true,
-  schema: {
-    tableName: 'agent',
-    columnNames: {
-      session_id: 'session_id',
-      expires: 'expires',
-      data: 'data',
-    },
-  },
-}, connection);
 
 
-app.use(session({
-  secret: 'asdfghjkl',
-  store: sessionStore,
-  resave: false,
-  saveUninitialized: true,
-}));
+// app.use(session({
+//   secret: 'asdfghjkl',
+//   store: sessionStore,
+//   resave: false,
+//   saveUninitialized: true,
+// }));
 
 // Function to execute a query
 function getItems() {
@@ -117,16 +152,17 @@ function getItems() {
       res.locals.crn = req.session.crn; // Make CRN available to routes
     }
     next();
-  });
-  const authenticateUser = (request, response) => {
-    const { agentId, password } = request.body;
-  
-    connection.query(
-      'SELECT * FROM agent WHERE agentId = ? AND password = ?',
-      [agentId, password],
-      (error, results) => {
-        if (error) {
-          throw error; 
+  });    
+  const authenticateUser = (request, response) => {   
+    const { agentId, password } = request.body;          
+            
+
+    pool.query(         
+      'SELECT * FROM agent WHERE agentId = ? AND password = ?',    
+      [agentId, password],                     
+      (error, results) => {                
+        if (error) {        
+          throw error;        
         }
   
         if (results.length === 0) {
@@ -143,8 +179,7 @@ function getItems() {
 
     const getInfo=(request,response)=>{
       const { crn} =request.query;
-      console.log(crn)
-      connection.query('select phonenumber from agent where crn=?',[crn],(error,results)=>{
+      pool.query('select phonenumber from agent where crn=?',[crn],(error,results)=>{
           if(error){
               throw error
           } 
@@ -154,25 +189,24 @@ function getItems() {
   } 
   const getAgent=(request,response)=>{
     const { crn,phonenumber} =request.query;
-    console.log('fetched',crn,phonenumber)
-    connection.query('select agentType, name, email, password, phonenumber,aadharNumber, uploadAadhar, doorNo, street, landmark, village, pincode, pancardNumber, uploadPan, mandal, state, district,agentId from agent where crn=? and phonenumber=?',[crn,phonenumber],(error,results)=>{
+    pool.query('select agentType, name, email, password, phonenumber,aadharNumber, uploadAadhar, doorNo, street, landmark, village, pincode, pancardNumber, uploadPan, mandal, state, district,agentId from agent where crn=? and phonenumber=?',[crn,phonenumber],(error,results)=>{
         if(error){
             throw error 
         } 
         response.status(200).json(results)
-console.log(results)
+
     })
 }  
   const getAgentInfo=(request,response)=>{
     const { crn } = request.query;
-    console.log(`Fetching data for date range: ${crn}`); // Add a log statement to check query parameters
+ 
 
-    connection.query('select * from agent where crn= ?',[crn],(error,results)=>{
+    pool.query('select * from agent where crn= ?',[crn],(error,results)=>{
         if(error){ 
             throw error
         } 
         response.status(200).json(results)
-console.log(results)    
+
     })
 }  
 const getAgentUpdate=(request,response)=>{
@@ -185,32 +219,32 @@ const getAgentUpdate=(request,response)=>{
   password,
   phonenumber,
   aadharNumber,
-  uploadAadhar,
   doorNo,
   street,
   landmark,
   village,
   pincode,
   pancardNumber,
-  uploadPan,
-  mandal,
+  mandal,  
   crn,
   state,
   district
   }=request.body
-  connection.query('update agent set "agentType"=$2, name=$3, email=$4, password=$5, phonenumber=$6, "aadharNumber"=$7, "uploadAadhar"=$8, "pancardNumber"=$9, "uploadPan"=$10, "doorNo"=$11, street=$12, landmark=$13, village=$14, pincode=$15, mandal=$16, district=$17, state=$18, crn=$19 where id=$1 ',[id,agentType, name, email, password, phonenumber, aadharNumber, uploadAadhar, pancardNumber, uploadPan, doorNo, street, landmark, village, pincode, mandal, district, state, crn],(error,results)=>{
+  
+  pool.query('update agent set agentType=?, name=?, email=?, password=?, phonenumber=?, aadharNumber=?,  pancardNumber=?,  doorNo=?, street=?, landmark=?, village=?, pincode=?, mandal=?, district=?, state=?, crn=? where id=? ',[agentType, name, email, password, phonenumber, aadharNumber, pancardNumber, doorNo, street, landmark, village, pincode, mandal, district, state, crn,id],(error,results)=>{
       if(error){
-          throw error
+          throw error   
       }
       response.status(200).send(`Agent updated with id:${id}`) 
-     })
-} 
-
+   
+     })   
+}   
+   
 const getAgentInfo1 = (request, response) => {
   const { crn, phonenumber } = request.query;
-  console.log(`Fetching data for CRN: ${crn} and Phone Number: ${phonenumber}`); // Log the CRN and phone number
+ 
 
-  connection.query(
+  pool.query(
     'SELECT agentType, name, phonenumber, village, district, state FROM agent WHERE crn = ? AND phonenumber = ?',
     [crn, phonenumber],
     (error, results) => {
@@ -218,28 +252,28 @@ const getAgentInfo1 = (request, response) => {
         throw error;
       }
       response.status(200).json(results);
-      console.log(results);
+      
     }
   );
 };
 
 const getAgentType = (request, response) => {
   const { agentId } = request.query; // Change agentType to phonenumber
-  console.log(`Fetching data for phone number: ${agentId}`);
 
-  connection.query('SELECT t1.*, t2.ownername, t2.owneremail FROM agent AS t1 JOIN owner1 AS t2 ON t1.crn = t2.crn WHERE t1.agentId = ?', [agentId], (error, results) => {
+
+  pool.query('SELECT t1.*, t2.ownername, t2.owneremail FROM agent AS t1 JOIN owner1 AS t2 ON t1.crn = t2.crn WHERE t1.agentId = ?', [agentId], (error, results) => {
     if (error) {
       throw error;
     }
     response.status(200).json(results);
-    console.log(results)
+ 
   });
 };
 const getTrucks = (request, response) => {
   const {crn } = request.query;
-  console.log(crn);
+ 
 
-  connection.query(
+  pool.query(
     'SELECT t1.*, t2.* FROM truck AS t1 JOIN post1 AS t2 ON t1.truckNumber = t2.truckNumber WHERE t2.crn = ?',
     [crn],
     async (error, results) => {
@@ -302,7 +336,7 @@ const getTrucks = (request, response) => {
 // Function to get signed URLs for images from S3 bucket
 
 const getOwner=(request,response)=>{
-  connection.query('select * from agent ',(error,results)=>{
+  pool.query('select * from agent ',(error,results)=>{
         if(error){
             throw error
         } 
@@ -311,7 +345,7 @@ const getOwner=(request,response)=>{
 } 
 const getOwnerById=(request,respose)=>{
     const id = parseInt(request.params.id)
-    connection.query('select * from agent where id=?',[id],(error,results)=>{
+    pool.query('select * from agent where id=?',[id],(error,results)=>{
         if(error){
             throw error
         }
@@ -354,8 +388,7 @@ const createOwner = async (request, response) => {
       uploadFileToS3(uploadAadhar[0], filenames.uploadAadhar),
       uploadFileToS3(uploadPan[0], filenames.uploadPan),
     ]);
-    console.log(request.files)
-console.log('requst file buffer',request.files.buffer)
+  
     // Insert data into the MySQL database   
     const results = await insertOwnerDataIntoDB({
       agentType,
@@ -394,7 +427,7 @@ const uploadFileToS3 = async (file, filename) => {
     Body: fs.createReadStream(file.path),  
     ContentType: file.mimetype,   
   };    
-console.log(params)    
+
   try {     
     const command = new PutObjectCommand(params);  
     await s3.send(command);
@@ -427,7 +460,7 @@ const insertOwnerDataIntoDB = async ({
   filenames,
 }) => {
   return new Promise((resolve, reject) => {
-    connection.query('insert into agent (agentType, name, email, password, phonenumber, aadharNumber, uploadAadhar, pancardNumber, uploadPan, doorNo, street, landmark, village, pincode, mandal, district, state, crn, agentId) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+    pool.query('insert into agent (agentType, name, email, password, phonenumber, aadharNumber, uploadAadhar, pancardNumber, uploadPan, doorNo, street, landmark, village, pincode, mandal, district, state, crn, agentId) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     [agentType, name, email, password, phonenumber, aadharNumber, filenames.uploadAadhar, pancardNumber, filenames.uploadPan, doorNo, street, landmark, village, pincode, mandal, district, state, crn, agentId],
       (error, results) => {
         if (error) {
@@ -468,7 +501,7 @@ const updateOwner=(request,response)=>{
     state,
     district
     }=request.body
-    connection.query('update agent set agentType=$2, name=$3, email=$4, password=$5, phonenumber=$6, aadharNumber=$7, "uploadAadhar"=$8, "pancardNumber"=$9, "uploadPan"=$10, "doorNo"=$11, street=$12, landmark=$13, village=$14, pincode=$15, mandal=$16, district=$17, state=$18, crn=$19 where id=$1',[agentType, name, email, password, phonenumber, aadharNumber, uploadAadhar, pancardNumber, uploadPan, doorNo, street, landmark, village, pincode, mandal, district, state, crn],(error,results)=>{
+    pool.query('update agent set agentType=$2, name=$3, email=$4, password=$5, phonenumber=$6, aadharNumber=$7, "uploadAadhar"=$8, "pancardNumber"=$9, "uploadPan"=$10, "doorNo"=$11, street=$12, landmark=$13, village=$14, pincode=$15, mandal=$16, district=$17, state=$18, crn=$19 where id=$1',[agentType, name, email, password, phonenumber, aadharNumber, uploadAadhar, pancardNumber, uploadPan, doorNo, street, landmark, village, pincode, mandal, district, state, crn],(error,results)=>{
         if(error){
             throw error
         }
@@ -477,7 +510,7 @@ const updateOwner=(request,response)=>{
 } 
 const deleteOwner=(request,response)=>{
     const id=parseInt(request.params.id)
-    connection.query('DELETE FROM agent  WHERE id=?',[id],(error,results)=>
+    pool.query('DELETE FROM agent  WHERE id=?',[id],(error,results)=>
     {
         if(error){    
             throw error  
@@ -489,7 +522,7 @@ const deleteBooking = (request, response) => {
     const { id } = request.params;
   
     // Retrieve the booking details to get the truck data
-    connection.query('SELECT * FROM booking WHERE id = ?', [id], (error, bookingSelectResult) => {
+    pool.query('SELECT * FROM booking WHERE id = ?', [id], (error, bookingSelectResult) => {
       if (error) {
         throw error;  
       }
@@ -498,13 +531,13 @@ const deleteBooking = (request, response) => {
   
       if (bookingData) {
         // Delete the canceled booking
-        connection.query('UPDATE booking SET status = ? WHERE id = ?', ['canceled', id], (error, bookingDeleteResult) => {
+        pool.query('UPDATE booking SET status = ? WHERE id = ?', ['canceled', id], (error, bookingDeleteResult) => {
           if (error) {
             throw error;
           }
   
           // Now, move data from the 'post' table to the 'post1' table based on some criteria (e.g., truckNumber)
-          connection.query(
+          pool.query(
             'INSERT INTO post1 SELECT * FROM post WHERE truckNumber = ?',
             [bookingData.truckNumber],
             (error, post1InsertResult) => {
@@ -523,9 +556,9 @@ const deleteBooking = (request, response) => {
   };
   const getBookDate = (request, response) => {
     const { from, to } = request.query;
-    console.log(`Fetching data for date range1: from ${from} to ${to}`);
+
   
-    connection.query(
+    pool.query(
       'SELECT truckNumber, date, time, `from`, `to`, fromSublocation, toSublocation, totalPrice, tbr, status FROM booking WHERE DATE(`date`) >= ? AND DATE(`date`) <= ?',
       [from, to],
       (error, results) => {  
@@ -539,7 +572,7 @@ const deleteBooking = (request, response) => {
   
 const getTable1=(request,respose)=>{
   const {feildcrn}=request.query;
-  connection.query('select * from owner1 where feildcrn=?',[feildcrn],(error,results)=>{
+  pool.query('select * from owner1 where feildcrn=?',[feildcrn],(error,results)=>{
       if(error){
           throw error
       }
@@ -549,7 +582,7 @@ const getTable1=(request,respose)=>{
 }
 const getTable2=(request,respose)=>{
   const {feildcrn}=request.query;
-  connection.query('select * from truck where feildcrn=?',[feildcrn],(error,results)=>{
+  pool.query('select * from truck where feildcrn=?',[feildcrn],(error,results)=>{
       if(error){
           throw error
       }
@@ -559,7 +592,7 @@ const getTable2=(request,respose)=>{
 }
 const getTable3=(request,respose)=>{
   const {feildcrn}=request.query;
-  connection.query('select * from truck where feildcrn=?',[feildcrn],(error,results)=>{
+  pool.query('select * from truck where feildcrn=?',[feildcrn],(error,results)=>{
       if(error){
           throw error
       }
@@ -567,12 +600,48 @@ const getTable3=(request,respose)=>{
       respose.status(200).json(results)
   })
 }
+const getDatacollector=(request,respose)=>{
+  const {fieldcrn}=request.query;
+
+  pool.query('select * from collector where fieldcrn=?',[fieldcrn],(error,results)=>{
+      if(error){
+          throw error
+      }   
+      
+      respose.status(200).json(results)
+  })
+}
+const postdatacollector=(request,respose)=>{
+  const { ownerName, phoneNumber,alterphoneNumber, organizationName, interest, address,fieldcrn } = request.body;
+  // const {feildcrn}=request.query;
+  pool.query('INSERT INTO collector (ownerName, phoneNumber,alterphoneNumber, organizationName, interest, address,fieldcrn) VALUES (?,?, ?, ?, ?, ?,?)',[ownerName, phoneNumber,alterphoneNumber, organizationName, interest, address,fieldcrn],(error,results)=>{
+      if(error){
+          throw error
+      }
+      
+      respose.status(200).json(results)
+  })
+}
+const updatedelete=(request,respose)=>{
+  const agentId = request.params.agentId;
+  const status = request.body.status;
+  pool.query('UPDATE agent SET status = ? WHERE id = ?',[status,agentId],(error,results)=>{
+      if(error){
+          throw error
+      }
+      
+      respose.json({ message: 'Agent status updated successfully', updatedAgentId: agentId });
+  })
+}
+
 
 module.exports = { 
+  getDatacollector,
+  postdatacollector,
   getAgentType,
   getInfo,
     getTrucks,
-    getAgentInfo1,
+    getAgentInfo1,      
     authenticateUser,
     getAgentInfo,
     getOwner,
@@ -587,4 +656,5 @@ module.exports = {
     getTable1,
     getTable2,
     getTable3,
+    updatedelete
 }  

@@ -27,40 +27,74 @@ app.use(session({ secret: 'your-secret-key', resave: false, saveUninitialized: f
 //   });  
 const mysql = require('mysql');
 
-const connection = mysql.createConnection({
-  host: '68.178.149.116', 
-  port:'3306',
+// const connection = mysql.createConnection({
+//   host: '68.178.149.116', 
+//   port:'3306',
+//   user: 'truckbooking',
+//   password: 'truckbooking',
+//   database: 'truckbooking',
+ 
+// });                            
+ 
+// connection.connect((err,connection) => {
+//   if (err) {
+//     console.error('Error connecting to MySQL:', err.stack);
+//     return;
+//   } 
+
+//   console.log('Connected to MySQL as ID:', connection.threadId);
+
+//   // Release the connection when done
+
+// });  
+// connection.on('error', (err) => {
+//   if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+//     console.error('Database connection was closed.');
+//   } else if (err.code === 'ER_CON_COUNT_ERROR') {
+//     console.error('Database has too many connections.');
+//   } else if (err.code === 'ECONNRESET') {
+//     console.error('Connection to database was reset.');
+//   } else { 
+//     console.error('Unexpected database error:', err.message);
+//   }
+// });
+// // Note: Avoid calling pool.connect() multiple times as it's not needed for a pool.
+
+const pool = mysql.createPool({
+  // connectionLimit: 10, // Adjust as needed
+  host: '68.178.149.116',
+  port: '3306',
   user: 'truckbooking',
   password: 'truckbooking',
   database: 'truckbooking',
- 
-});                            
- 
-connection.connect((err,connection) => {
+});
+
+pool.getConnection((err, connection) => {
   if (err) {
-    console.error('Error connecting to MySQL:', err.stack);
-    return;
-  } 
+      console.error('Error getting connection from pool', err);
+      return; 
+  }
 
-  console.log('Connected to MySQL as ID:', connection.threadId);
+  console.log('Connected to database');
+  connection.release();
+});
 
-  // Release the connection when done
-
-});  
-connection.on('error', (err) => {
+pool.on('error', (err) => {
+  console.error('DB pool error', err);
   if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-    console.error('Database connection was closed.');
-  } else if (err.code === 'ER_CON_COUNT_ERROR') {
-    console.error('Database has too many connections.');
-  } else if (err.code === 'ECONNRESET') {
-    console.error('Connection to database was reset.');
-  } else { 
-    console.error('Unexpected database error:', err.message);
+      // Reconnect to the database
+      pool.getConnection((err, connection) => {
+          if (err) {
+              console.error('Error getting connection from pool after reconnect', err);
+              return;
+          }
+          console.log('Reconnected to database');
+          connection.release();
+      }); 
+  } else {
+      throw err;
   }
 });
-// Note: Avoid calling pool.connect() multiple times as it's not needed for a pool.
-
-  
   
   // Middleware to ensure the user is authenticated and retrieve the CRN from the session
   app.use((req, res, next) => {
@@ -85,30 +119,29 @@ const getPostDate=(request,response)=>{
     const {from , to,crn} = request.query;
     console.log(`Fetching data for date range11: from ${from} to ${to}`); // Add a log statement to check query parameters
 
-    connection.query('select truckNumber, date, time, `from`, `to` from booking where  `date` >= ? AND `date` <= ? AND crn = ?',[from,to,crn],(error,results)=>{
+    pool.query('select truckNumber, date, time, `from`, `to` from booking where  `date` >= ? AND `date` <= ? AND crn = ?',[from,to,crn],(error,results)=>{
         if(error){
             throw error
-        }
+        }   
         response.status(200).json(results)
-console.log(results)
+
     })      
 }
 const getPostTruck=(request,response)=>{
     const { truckNumber,crn } = request.query;
     console.log(`Fetching data for date range: ${truckNumber}`); // Add a log statement to check query parameters
-    connection.query('select truckNumber, date, name, "from", "to",status,paymentStatus from booking where  truckNumber=? and crn=?',[truckNumber,crn],(error,results)=>{
-        if(error){
+    pool.query('select * from booking where  truckNumber=? and crn=?',[truckNumber,crn],(error,results)=>{
+        if(error){   
             throw error  
-        }
+        }  
         response.status(200).json(results)
 
     })
 }
 const getLocation=(request,response)=>{
     const { loadingSublocations,unloadingSublocations } = request.query;
-    console.log(`Fetching data for date range: ${loadingSublocations} to ${unloadingSublocations}`); // Add a log statement to check query parameters
 
-    connection.query('select loadingSublocations,unloadingSublocations from post ',(error,results)=>{
+    pool.query('select loadingSublocations,unloadingSublocations from post ',(error,results)=>{
         if(error){
             throw error
         }
@@ -118,36 +151,44 @@ const getLocation=(request,response)=>{
 }
 const getPost = (request, response) => {
   const { crn } = request.query;
-  console.log(crn);
-  connection.query('SELECT * FROM post WHERE crn=?', [crn], (error, results) => {
+  pool.query('SELECT * FROM post WHERE crn=?', [crn], (error, results) => {
       if (error) {
-          console.error('Error fetching data:', error);
+          console.error('Error fetching data:', error);  
           response.status(500).send('Internal Server Error');
           return;
-      }
-      response.status(200).json(results);
-  });
+      }         
+      response.status(200).json(results);    
+  });      
 };
 const getPincode = (request, response) => {
   const { pincode } = request.params;
-  console.log(pincode);
-  connection.query('SELECT pincode, sublocation,location FROM pincodetable WHERE pincode = ?', [pincode], (error, results) => {
+  pool.query('SELECT pincode, sublocation,location FROM pincodetable WHERE pincode = ?', [pincode], (error, results) => {
       if (error) {
           console.error('Error fetching data:', error);
           response.status(500).send('Internal Server Error');
           return;
       }
+      response.status(200).json(results);  
+  }); 
+};    
+const getTruckpostStatus = (request, response) => {
+  const { truckNumber } = request.params;
+  pool.query('SELECT * FROM post WHERE truckNumber = ? ORDER BY date DESC, id DESC LIMIT 1', [truckNumber], (error, results) => {
+      if (error) {  
+          console.error('Error fetching data:', error);       
+          response.status(500).send('Internal Server Error');  
+          return;  
+      }  
       response.status(200).json(results);
   }); 
 }; 
 const getSelectedPincode = (request, response) => {
   const { pincode, sublocation } = request.params;
-  console.log('Selected Pincode:', pincode);
-  console.log('Selected Sublocation:', sublocation);
+  
 
   const query = `SELECT location, mainLocation, sublocation,pincode FROM pincodetable WHERE pincode = ? AND sublocation = ?`;
 
-  connection.query(query, [pincode, sublocation], (error, results) => {
+  pool.query(query, [pincode, sublocation], (error, results) => {
     if (error) {
       console.error('Error fetching data:', error);
       response.status(500).json({ error: 'Internal Server Error' });
@@ -162,11 +203,29 @@ const getSelectedPincode = (request, response) => {
     }
   });
 };     
+const addPincodeLocation = (request, response) => {
+  const { location, mainlocation, sublocation, pincode } = request.body;
+
+  const query = `
+    INSERT INTO pincodetable (location, mainlocation, sublocation, pincode)
+    VALUES (?,?,?,?)
+  `;
+
+  pool.query(query, [location, mainlocation, sublocation, pincode], (error, results) => {
+    if (error) {
+      console.error('Error inserting data:', error);
+      response.status(500).json({ error: 'Internal Server Error' });
+      return;
+    }
+
+    response.status(201).send('Location details added successfully');
+  });
+};
+
 const getPostStatus = (request, response) => {   
     const { crn, truckNumber } = request.query;
-    console.log(crn, truckNumber);
   
-    connection.query('SELECT * FROM post WHERE crn = ? AND truckNumber = ?', [crn, truckNumber], (error, postResults) => {
+    pool.query('SELECT * FROM post WHERE crn = ? AND truckNumber = ?', [crn, truckNumber], (error, postResults) => {
       if (error) {
         throw error;
       }
@@ -187,7 +246,7 @@ const getPostStatus = (request, response) => {
         }
   
         // Now, check if there's a previous booking
-        connection.query(
+        pool.query(
           'SELECT * FROM booking WHERE truckNumber = ? ORDER BY date DESC LIMIT 1',
           [truckNumber],
           (bookingError, bookingResults) => {
@@ -221,16 +280,28 @@ const getPostStatus = (request, response) => {
   
 const getPostById=(request,respose)=>{
     const id = parseInt(request.params.id)
-    connection.query('select * from post where id=?',[id],(error,results)=>{
+    pool.query('select * from post where id=?',[id],(error,results)=>{
         if(error){
             throw error
         }
         respose.status(200).json(results)
     })
 }
+const getbookingstatustrack=(request,respose)=>{
+  const {truckNumber,date,time} = request.body
+  console.log('trucknumber',truckNumber)
+
+  pool.query('SELECT * FROM post WHERE truckNumber = ? AND date = ? AND time = ?;',[truckNumber,date,time],(error,results)=>{
+      if(error){
+          throw error
+      }
+      respose.status(200).json(results)
+      console.log(results)
+  })
+}
 const getPostByTruck=(request,respose)=>{
     const truckNumber = parseInt(request.params.id)
-    connection.query('select * from post where truckNumber=?',[truckNumber],(error,results)=>{
+    pool.query('select * from post where truckNumber=?',[truckNumber],(error,results)=>{
         if(error){
             throw error
         }
@@ -239,7 +310,7 @@ const getPostByTruck=(request,respose)=>{
 }
 const getPostBypincode=(request,respose)=>{
   const pincode = parseInt(request.params.id)
-  connection.query('select * from Srikakulam where PINCODES=?',[pincode],(error,results)=>{
+  pool.query('select * from Srikakulam where PINCODES=?',[pincode],(error,results)=>{
       if(error){
           throw error 
       }
@@ -257,7 +328,7 @@ const getUpdateBypincode = (request, response) => {
     PINCODES
   } = request.body;
 console.log(request.body)
-  connection.query(
+  pool.query(
     'UPDATE Srikakulam SET COUNTRY = ?, STATE = ?, DISTRICT = ?, MANDAL = ?, VILLAGES = ?, PINCODES = ? WHERE id = ?',
     [COUNTRY, STATE, DISTRICT, MANDAL, VILLAGES, PINCODES, id],
     (error, results) => {
@@ -282,10 +353,11 @@ const createPost=(request,response)=>{
    ton,
    kilometer,
    pricePerTonKm,
-   crn,
+   totalkilometers,
+   crn,    
    
    }=request.body
-   connection.query('insert into post (truckNumber, date, time, `from`, `to`, loadingSublocations,unloadingSublocations,ton,kilometer,pricePerTonKm, crn ) values(?,?,?,?,?,?,?,?,?,?,?)',[ truckNumber,  date, time,from, to,loadingSublocations,unloadingSublocations,ton,kilometer,pricePerTonKm,crn],(error,results)=>{
+   pool.query('insert into post (truckNumber, date, time, `from`, `to`, loadingSublocations,unloadingSublocations,ton,kilometer,pricePerTonKm,totalkilometers, crn ) values(?,?,?,?,?,?,?,?,?,?,?,?)',[ truckNumber,  date, time,from, to,loadingSublocations,unloadingSublocations,ton,kilometer,pricePerTonKm,totalkilometers,crn],(error,results)=>{
     if(error){
         throw error
     }
@@ -304,15 +376,16 @@ const createPost1=(request,response)=>{
     ton,
    kilometer,      
    pricePerTonKm,
+   totalkilometers,
     crn,  
      
     }=request.body
-    connection.query('insert into post1 (truckNumber, date, time,`from`, `to`, loadingSublocations,unloadingSublocations,ton,kilometer,pricePerTonKm, crn ) values(?,?,?,?,?,?,?,?,?,?,?)',[ truckNumber,  date, time,from, to,loadingSublocations,unloadingSublocations,ton,kilometer,pricePerTonKm,crn],(error,results)=>{
+    pool.query('insert into post1 (truckNumber, date, time,`from`, `to`, loadingSublocations,unloadingSublocations,ton,kilometer,pricePerTonKm,totalkilometers, crn ) values(?,?,?,?,?,?,?,?,?,?,?,?)',[ truckNumber,  date, time,from, to,loadingSublocations,unloadingSublocations,ton,kilometer,pricePerTonKm,totalkilometers,crn],(error,results)=>{
      if(error){
          throw error
      }  
      response.status(200).send(`post truck add with id:${results.insertId}`)
-    })
+    })   
  }
 const updatePost=(request,response)=>{
     const id=parseInt(request.params.id)
@@ -326,7 +399,7 @@ const updatePost=(request,response)=>{
         unloadingSublocations,
                     crn,
     }=request.body
-    connection.query('update post set "registrationNumber"=$2, date=$3, "time"=$4, "from"=$5, "to"=$6, sublocations=$7, crn=$8,"loadingSublocations"=$9,"unloadingSublocations"=$10 where id=$1',[ registrationNumber,  date, time, from,to,crn,loadingSublocations,unloadingSublocations],(error,results)=>{
+    pool.query('update post set "registrationNumber"=$2, date=$3, "time"=$4, "from"=$5, "to"=$6, sublocations=$7, crn=$8,"loadingSublocations"=$9,"unloadingSublocations"=$10 where id=$1',[ registrationNumber,  date, time, from,to,crn,loadingSublocations,unloadingSublocations],(error,results)=>{
         if(error){
             throw error
         }
@@ -335,7 +408,7 @@ const updatePost=(request,response)=>{
 }   
 const deletePost = (request, response) => {
     const id = parseInt(request.params.id);
-    connection.query('DELETE FROM post WHERE id=?', [id], (error, results) => {
+    pool.query('DELETE FROM post WHERE id=?', [id], (error, results) => {
       if (error) {
         console.error("Error deleting from post table:", error);
         response.status(500).json({ error: "Internal server error" });
@@ -347,7 +420,7 @@ const deletePost = (request, response) => {
    
   const deletePost1 = (request, response) => {
     const id = parseInt(request.params.id);
-    connection.query('DELETE FROM post1 WHERE id=?', [id], (error, results) => {
+    pool.query('DELETE FROM post1 WHERE id=?', [id], (error, results) => {
       if (error) {
         console.error("Error deleting from post1 table:", error);
         response.status(500).json({ error: "Internal server error" });
@@ -358,7 +431,7 @@ const deletePost = (request, response) => {
   };     
 const setPost=(request,response)=>{
     const truckNumber=parseInt(request.params.id)
-    connection.query('select "truckNumber" FROM post  WHERE "truckNumber"=$1',[truckNumber],(error,results)=>
+    pool.query('select "truckNumber" FROM post  WHERE "truckNumber"=$1',[truckNumber],(error,results)=>
     {
         if(error){  
             throw error
@@ -378,7 +451,7 @@ const sublocation = (request, response) => {
   const query = `SELECT * FROM sublocation WHERE ${location} IS NOT NULL`;
   const values = [];
 
-  connection.query(query, values, (error, results) => {
+  pool.query(query, values, (error, results) => {
     if (error) {
       console.error('Error fetching sublocations:', error);
       response.status(500).json({ error: 'Internal Server Error' });
@@ -422,5 +495,8 @@ module.exports = {
     getSelectedPincode,
     getPostBypincode,
     getUpdateBypincode,
-    sublocation
+    sublocation,
+    getTruckpostStatus,
+    addPincodeLocation,
+    getbookingstatustrack
 }       

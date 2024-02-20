@@ -5,7 +5,7 @@ const app = express()
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
-const secretKey = 'your-secret-key';
+const secretKey = 'yoursecretkey';
 const {S3Client, PutObjectCommand, BucketType} = require('@aws-sdk/client-s3')
 const dotenv = require('dotenv');
 dotenv.config();
@@ -20,36 +20,71 @@ dotenv.config();
 // })
 const mysql = require('mysql');  
 
-const connection = mysql.createConnection({
-  host: '68.178.149.116', 
-  port:'3306',
-  user: 'truckbooking',  
-  password: 'truckbooking',     
-  database: 'truckbooking',    
-  connectTimeout: 30000,         
+// const connection = mysql.createConnection({
+//   host: '68.178.149.116', 
+//   port:'3306',
+//   user: 'truckbooking',  
+//   password: 'truckbooking',     
+//   database: 'truckbooking',    
+//   connectTimeout: 30000,         
              
-});                                 
+// });                                 
   
-connection.connect((err,connection) => {
+// connection.connect((err,connection) => {
+//   if (err) {
+//     console.error('Error connecting to MySQL:', err.stack);
+//     return;
+//   } 
+
+//   console.log('Connected to MySQL as ID:', connection.threadId);
+
+//   // Release the connection when done
+
+// });  
+// connection.on('error', (err) => {
+//   if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+//     console.error('Database connection was closed.');
+//   } else if (err.code === 'ER_CON_COUNT_ERROR') {
+//     console.error('Database has too many connections.');
+//   } else if (err.code === 'ECONNRESET') {
+//     console.error('Connection to database was reset.');
+//   } else { 
+//     console.error('Unexpected database error:', err.message);
+//   }
+// });
+const pool = mysql.createPool({
+  // connectionLimit: 10, // Adjust as needed
+  host: '68.178.149.116',
+  port: '3306',
+  user: 'truckbooking',
+  password: 'truckbooking',
+  database: 'truckbooking',
+});
+
+pool.getConnection((err, connection) => {
   if (err) {
-    console.error('Error connecting to MySQL:', err.stack);
-    return;
-  } 
+      console.error('Error getting connection from pool', err);
+      return; 
+  }
 
-  console.log('Connected to MySQL as ID:', connection.threadId);
+  console.log('Connected to database');
+  connection.release();
+});
 
-  // Release the connection when done
-
-});  
-connection.on('error', (err) => {
+pool.on('error', (err) => {
+  console.error('DB pool error', err);
   if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-    console.error('Database connection was closed.');
-  } else if (err.code === 'ER_CON_COUNT_ERROR') {
-    console.error('Database has too many connections.');
-  } else if (err.code === 'ECONNRESET') {
-    console.error('Connection to database was reset.');
-  } else { 
-    console.error('Unexpected database error:', err.message);
+      // Reconnect to the database
+      pool.getConnection((err, connection) => {
+          if (err) {
+              console.error('Error getting connection from pool after reconnect', err);
+              return;
+          }
+          console.log('Reconnected to database');
+          connection.release();
+      }); 
+  } else {
+      throw err;
   }
 });
 const bucketname = process.env.BUCKET_NAME;
@@ -116,7 +151,7 @@ function generateCRN() {
   const authenticateUser = (request, response) => {
     const { phonenumber, password } = request.body;
   
-    connection.query(
+    pool.query(
       'SELECT * FROM owner1 WHERE phonenumber = ? AND password = ?',
       [phonenumber, password],
       (error, results) => {
@@ -128,9 +163,9 @@ function generateCRN() {
         if (results && results.length > 0) {
           // Authentication successful, return user data
           const user = results[0];
-          const token = jwt.sign({ user }, JWT_SECRET);
+          const token = jwt.sign({ user }, secretKey,{expiresIn:'30000000'});
           response.status(200).json({ message: 'Authentication successful', user, token });
-          console.log('Sent user data:', user);
+          console.log('Sent user data:', user,token);
         } else {
           // Authentication failed
           response.status(401).json({ message: 'Please enter valid details and try again' });   
@@ -144,7 +179,7 @@ function generateCRN() {
       const { crn, loggedstatus, password } = request.body;
       console.log(crn, loggedstatus, password);
     
-      connection.query(
+      pool.query(
         'UPDATE owner1 SET loggedstatus = ?, password = ? WHERE crn = ?',
         [loggedstatus, password, crn],
         (error, results) => {
@@ -165,7 +200,7 @@ function generateCRN() {
       const { crn, loggedstatus, password } = request.body;
       console.log(crn, loggedstatus, password);
     
-      connection.query(
+      pool.query(
         'UPDATE agent SET loggedstatus = ?, password = ? WHERE crn = ?',
         [loggedstatus, password, crn],
         (error, results) => {
@@ -307,7 +342,7 @@ function generateCRN() {
     }) => {
       return new Promise((resolve, reject) => {
         
-        connection.query(
+        pool.query(
           `INSERT INTO owner1 
           (ownername, owneremail, userType, phonenumber, password, agentNumber, bankName, holderName, 
           accNumber, bankIfsc, aadharNumber, pancardNumber, uploadAadhar, uploadPan, street, doorNo, 
@@ -358,7 +393,7 @@ function generateCRN() {
   const authenticateAgent = (request, response) => {
     const { phonenumber, password } = request.body;
   
-    connection.query(
+    pool.query(
       'SELECT * FROM market WHERE phonenumber = ? AND password = ?',
       [phonenumber, password],
       (error, results) => {
@@ -383,7 +418,7 @@ function generateCRN() {
   
 const getUsers = (request, response) => {
   const {crn}=request.query;
-  connection.query('SELECT * FROM owner1 where crn=?  ',[crn], (error, results) => {
+  pool.query('SELECT * FROM owner1 where crn=?  ',[crn], (error, results) => {
         if (error) {
             throw error
         }
@@ -401,20 +436,19 @@ const getAgentUsers = (request, response) => {
     return;
   }  
 
-  connection.query('SELECT * FROM `owner1` WHERE feildcrn = ? ', [feildcrn], (error, results) => {
+  pool.query('SELECT * FROM `owner1` WHERE feildcrn = ? ', [feildcrn], (error, results) => {
     if (error) {
       console.error('Error fetching owner data:', error);
       response.status(500).json({ error: 'Internal Server Error' });
       return;
     }
 
-    console.log('Query result:', results);
 
    
 
     response.status(200).json(results);
-    console.log('Fetched owner data:', results);
-  });
+    
+  });   
 };
   
 // Additional code for setting up the server, database connection, etc.
@@ -423,7 +457,7 @@ const getAgentUsers = (request, response) => {
 
 const getUserById = (request, response) => {
     const id = parseInt(request.params.id)
-    connection.query('SELECT * FROM main2 WHERE id = $1', [id], (error, results) => {
+    pool.query('SELECT * FROM main2 WHERE id = $1', [id], (error, results) => {
         if (error) { 
             throw error
         }  
@@ -439,7 +473,7 @@ const createUser = (request, response) => {
          
     } = request.body
     const crn = generateCRN(); 
-    connection.query('INSERT INTO main2 (   phonenumber,password, crn ) VALUES ($1, $2,$3)', [  phonenumber,password,crn], (error, results) => {
+    pool.query('INSERT INTO main2 (   phonenumber,password, crn ) VALUES ($1, $2,$3)', [  phonenumber,password,crn], (error, results) => {
         if (error) {  
             throw error
         }
@@ -450,7 +484,7 @@ const createAgent = (request, response) => {
   const { phonenumber, password, name } = request.body;
   const crn = generateCRN();
   
-  connection.query( 'INSERT INTO market (phonenumber, password, name, crn) VALUES (?,?,?,?)', [phonenumber, password, name, crn], (error, results) => {
+  pool.query( 'INSERT INTO market (phonenumber, password, name, crn) VALUES (?,?,?,?)', [phonenumber, password, name, crn], (error, results) => {
           if (error) {
               throw error;
           }
@@ -466,7 +500,7 @@ const updateUser = (request, response) => {
         username,
         password,crn,
     } = request.body
-    connection.query(
+    pool.query(
         'UPDATE main2SET  username = $2, password = $3,crn=$4 WHERE id = $1',
         [id, username, password,crn],
         (error, results) => {
@@ -479,17 +513,132 @@ const updateUser = (request, response) => {
 }
 const deleteUser = (request, response) => {
     const id = parseInt(request.params.id)
-    connection.query('DELETE FROM main2 WHERE id = $1', [id], (error, results) => {
+    pool.query('DELETE FROM main2 WHERE id = $1', [id], (error, results) => {
         if (error) {
             throw error
         }
         response.status(200).send(`User deleted with ID: ${results.id}`)
     })
 }
+const verifyEmail= (req,res)=>{
+  const { owneremail } = req.body;
+
+  // Validate email
+  if (!owneremail) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  // Check if the email is present in the database
+  pool.query('SELECT * FROM owner1 WHERE owneremail = ?', [owneremail], (error, results) => {
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+
+    if (results.length === 0) {
+      // No user found with the given email
+      return res.status(404).json({ error: 'Email is not registered with us' });
+    }
+
+    // Generate and send OTP (similar to your existing logic)
+    let otpValue = Math.random();
+    const cnotp = Math.ceil(otpValue * 1000000);
+console.log('otp',cnotp)
+const ownername = results[0].ownername; 
+console.log('name',ownername)
+  
+    // For simplicity, you can just send the OTP in the response (in a real scenario, consider sending it via email)
+    res.status(200).json({ success: true, otp: cnotp,ownername });
+  });  
+}    
+const verifyEmailAgent= (req,res)=>{
+  const { email } = req.body;
+console.log('email',email)
+  // Validate email
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+  
+  // Check if the email is present in the database
+  pool.query('SELECT * FROM agent WHERE email = ?', [email], (error, results) => {
+    if (error) {  
+      console.error(error);  
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }  
+                 
+    if (results.length === 0) {
+      // No user found with the given email
+      return res.status(404).json({ error: 'Email is not registered with us' });
+    }
+
+    // Generate and send OTP (similar to your existing logic)
+    let otpValue = Math.random();
+    const cnotp = Math.ceil(otpValue * 1000000);
+console.log('otp',cnotp)
+const ownername = results[0].name; 
+console.log('name',ownername)
+  
+    // For simplicity, you can just send the OTP in the response (in a real scenario, consider sending it via email)
+    res.status(200).json({ success: true, otp: cnotp,ownername });
+  });  
+}    
+
+const agentPass = (req, res)=>{  
+  const { email, newPassword } = req.body;   
+   
+  // Validate email and newPassword
+  if (!email || !newPassword) {
+    return res.status(400).json({ error: 'Email and newPassword are required' });
+  }
+
+  // Perform database update
+  pool.query('UPDATE agent SET password = ? WHERE email = ?', [newPassword, email], (error, results) => {
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }   
+
+    if (results.affectedRows === 0) {
+      // No user found with the given email
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Password updated successfully
+    res.status(200).json({ success: true });
+  });
+}
+const ownerPass = (req, res)=>{
+  const { owneremail, newPassword } = req.body;
+
+  // Validate email and newPassword
+  if (!owneremail || !newPassword) {
+    return res.status(400).json({ error: 'Email and newPassword are required' });
+  }
+
+  // Perform database update
+  pool.query('UPDATE owner1 SET password = ? WHERE owneremail = ?', [newPassword, owneremail], (error, results) => {
+    if (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+
+    if (results.affectedRows === 0) {
+      // No user found with the given email
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Password updated successfully
+    res.status(200).json({ success: true });
+  });
+}
 module.exports = {
     getUsers,
+    agentPass,
+    verifyEmail,
+    ownerPass,    
     authenticateUser, 
-    getUserById,
+    verifyEmailAgent,
+    getUserById,  
     createUser,
     updateUser,
     deleteUser,
